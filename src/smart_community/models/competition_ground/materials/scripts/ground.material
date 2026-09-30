@@ -1,0 +1,13 @@
+material CompetitionField/Ground
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture map1.jpg
+      }
+    }
+  }
+}

@@ -1,0 +1,176 @@
+<?xml version="1.0" ?>
+<!-- 4 分类垃圾桶: 与楼宇同一排(由西往东: 楼宇A/B/C → 有害/可回收/厨余/其他), 标签朝北 + 朝南 -->
+<sdf version="1.6">
+  <model name="trash_bins">
+    <static>true</static>
+    <pose>0 0 0 0 0 0</pose>
+    <link name="bin_hazardous">
+      <pose>0.9 0 0 0 0 0</pose>
+      <collision name="col">
+        <geometry><box><size>0.62 0.46 0.92</size></box></geometry>
+      </collision>
+      <visual name="body">
+        <pose>0 0 0.42500000000000004 0 0 0</pose>
+        <geometry><box><size>0.62 0.46 0.8500000000000001</size></box></geometry>
+        <material>
+          <ambient>0.86 0.28 0.42 1</ambient>
+          <diffuse>0.86 0.28 0.42 1</diffuse>
+        </material>
+      </visual>
+      <visual name="lid">
+        <pose>0 0 0.885 0 0 0</pose>
+        <geometry><box><size>0.65 0.49 0.07</size></box></geometry>
+        <material>
+          <ambient>1.00 0.53 0.67 1</ambient>
+          <diffuse>1.00 0.53 0.67 1</diffuse>
+        </material>
+      </visual>
+      <visual name="label_north">
+        <pose>0 0.23800000000000002 0.5704 0 0 0</pose>
+        <geometry><box><size>0.558 0.012 0.2</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://trash_bins/materials</uri>
+            <name>TrashBins/Hazardous</name>
+          </script>
+        </material>
+      </visual>
+      <visual name="label_south">
+        <pose>0 -0.23800000000000002 0.5704 0 0 0</pose>
+        <geometry><box><size>0.558 0.012 0.2</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://trash_bins/materials</uri>
+            <name>TrashBins/HazardousSouth</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+    <link name="bin_recycle">
+      <pose>1.6 0 0 0 0 0</pose>
+      <collision name="col">
+        <geometry><box><size>0.62 0.46 0.92</size></box></geometry>
+      </collision>
+      <visual name="body">
+        <pose>0 0 0.42500000000000004 0 0 0</pose>
+        <geometry><box><size>0.62 0.46 0.8500000000000001</size></box></geometry>
+        <material>
+          <ambient>0.10 0.62 0.70 1</ambient>
+          <diffuse>0.10 0.62 0.70 1</diffuse>
+        </material>
+      </visual>
+      <visual name="lid">
+        <pose>0 0 0.885 0 0 0</pose>
+        <geometry><box><size>0.65 0.49 0.07</size></box></geometry>
+        <material>
+          <ambient>0.35 0.87 0.95 1</ambient>
+          <diffuse>0.35 0.87 0.95 1</diffuse>
+        </material>
+      </visual>
+      <visual name="label_north">
+        <pose>0 0.23800000000000002 0.5704 0 0 0</pose>
+        <geometry><box><size>0.558 0.012 0.2</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://trash_bins/materials</uri>
+            <name>TrashBins/Recycle</name>
+          </script>
+        </material>
+      </visual>
+      <visual name="label_south">
+        <pose>0 -0.23800000000000002 0.5704 0 0 0</pose>
+        <geometry><box><size>0.558 0.012 0.2</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://trash_bins/materials</uri>
+            <name>TrashBins/RecycleSouth</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+    <link name="bin_kitchen">
+      <pose>2.3 0 0 0 0 0</pose>
+      <collision name="col">
+        <geometry><box><size>0.62 0.46 0.92</size></box></geometry>
+      </collision>
+      <visual name="body">
+        <pose>0 0 0.42500000000000004 0 0 0</pose>
+        <geometry><box><size>0.62 0.46 0.8500000000000001</size></box></geometry>
+        <material>
+          <ambient>0.35 0.68 0.42 1</ambient>
+          <diffuse>0.35 0.68 0.42 1</diffuse>
+        </material>
+      </visual>
+      <visual name="lid">
+        <pose>0 0 0.885 0 0 0</pose>
+        <geometry><box><size>0.65 0.49 0.07</size></box></geometry>
+        <material>
+          <ambient>0.60 0.93 0.67 1</ambient>
+          <diffuse>0.60 0.93 0.67 1</diffuse>
+        </material>
+      </visual>
+      <visual name="label_north">
+        <pose>0 0.23800000000000002 0.5704 0 0 0</pose>
+        <geometry><box><size>0.558 0.012 0.2</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://trash_bins/materials</uri>
+            <name>TrashBins/Kitchen</name>
+          </script>
+        </material>
+      </visual>
+      <visual name="label_south">
+        <pose>0 -0.23800000000000002 0.5704 0 0 0</pose>
+        <geometry><box><size>0.558 0.012 0.2</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://trash_bins/materials</uri>
+            <name>TrashBins/KitchenSouth</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+    <link name="bin_other">
+      <pose>3.0 0 0 0 0 0</pose>
+      <collision name="col">
+        <geometry><box><size>0.62 0.46 0.92</size></box></geometry>
+      </collision>
+      <visual name="body">
+        <pose>0 0 0.42500000000000004 0 0 0</pose>
+        <geometry><box><size>0.62 0.46 0.8500000000000001</size></box></geometry>
+        <material>
+          <ambient>0.93 0.72 0.22 1</ambient>
+          <diffuse>0.93 0.72 0.22 1</diffuse>
+        </material>
+      </visual>
+      <visual name="lid">
+        <pose>0 0 0.885 0 0 0</pose>
+        <geometry><box><size>0.65 0.49 0.07</size></box></geometry>
+        <material>
+          <ambient>1.00 0.97 0.47 1</ambient>
+          <diffuse>1.00 0.97 0.47 1</diffuse>
+        </material>
+      </visual>
+      <visual name="label_north">
+        <pose>0 0.23800000000000002 0.5704 0 0 0</pose>
+        <geometry><box><size>0.558 0.012 0.2</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://trash_bins/materials</uri>
+            <name>TrashBins/Other</name>
+          </script>
+        </material>
+      </visual>
+      <visual name="label_south">
+        <pose>0 -0.23800000000000002 0.5704 0 0 0</pose>
+        <geometry><box><size>0.558 0.012 0.2</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://trash_bins/materials</uri>
+            <name>TrashBins/OtherSouth</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

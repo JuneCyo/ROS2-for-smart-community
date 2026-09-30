@@ -1,0 +1,148 @@
+<?xml version="1.0"?>
+<!--
+  my_robot 传感器宏 (URDF/Xacro)
+  ==============================
+  * my_lidar_360 : 360° 二维激光雷达 (sensor type="ray", 插件 libgazebo_ros_ray_sensor.so)
+  * my_camera    : 单目相机        (sensor type="camera", 插件 libgazebo_ros_camera.so)
+
+  约定: 宏的 xyz 参数 = 该传感器 link 原点在 parent link 坐标系下的位置。
+  Gazebo 相机沿 link 的 +x 方向看, 激光雷达在 link 原点的水平面上扫描。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===================== 材质 ===================== -->
+  <material name="mr_dark">   <color rgba="0.16 0.16 0.18 1.0"/></material>
+  <material name="mr_glass">  <color rgba="0.05 0.09 0.14 1.0"/></material>
+  <material name="mr_gray">   <color rgba="0.62 0.64 0.66 1.0"/></material>
+
+  <!-- ===================== 360° 激光雷达 ===================== -->
+  <xacro:macro name="my_lidar_360" params="prefix parent xyz samples:=360 update_rate:=10.0 range_max:=12.0">
+    <link name="${prefix}lidar_link">
+      <!-- 外壳 -->
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.035" length="0.040"/></geometry>
+        <material name="mr_dark"/>
+      </visual>
+      <!-- 激光窗口 -->
+      <visual>
+        <origin xyz="0 0 0.006" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.031" length="0.020"/></geometry>
+        <material name="mr_glass"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.035" length="0.040"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.06"/>
+        <inertia ixx="2.0e-5" ixy="0" ixz="0" iyy="2.0e-5" iyz="0" izz="2.0e-5"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}lidar_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${prefix}lidar_link"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+    </joint>
+
+    <gazebo reference="${prefix}lidar_link">
+      <sensor name="lidar" type="ray">
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>${update_rate}</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>${samples}</samples>
+              <resolution>1.0</resolution>
+              <!-- 360° 全向: -pi ~ +pi -->
+              <min_angle>-3.14159265</min_angle>
+              <max_angle>3.14159265</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>${range_max}</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.008</stddev>
+          </noise>
+        </ray>
+        <plugin name="lidar_controller" filename="libgazebo_ros_ray_sensor.so">
+          <ros>
+            <namespace>/</namespace>
+            <!-- ~ 表示传感器自身命名空间, 输出到 /scan -->
+            <remapping>~/out:=scan</remapping>
+          </ros>
+          <output_type>sensor_msgs/LaserScan</output_type>
+          <frame_name>${prefix}lidar_link</frame_name>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- ===================== 单目相机 ===================== -->
+  <xacro:macro name="my_camera" params="prefix parent xyz fov:=1.2217 width:=640 height:=480 update_rate:=15.0">
+    <link name="${prefix}camera_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="0.028 0.060 0.028"/></geometry>
+        <material name="mr_dark"/>
+      </visual>
+      <!-- 镜头 -->
+      <visual>
+        <origin xyz="0.017 0 0" rpy="0 1.5707963 0"/>
+        <geometry><cylinder radius="0.010" length="0.012"/></geometry>
+        <material name="mr_glass"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="0.028 0.060 0.028"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.03"/>
+        <inertia ixx="3.0e-6" ixy="0" ixz="0" iyy="3.0e-6" iyz="0" izz="3.0e-6"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}camera_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${prefix}camera_link"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+    </joint>
+
+    <gazebo reference="${prefix}camera_link">
+      <sensor name="camera" type="camera">
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>${update_rate}</update_rate>
+        <camera>
+          <horizontal_fov>${fov}</horizontal_fov>
+          <image>
+            <width>${width}</width>
+            <height>${height}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>50.0</far>
+          </clip>
+        </camera>
+        <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
+          <ros>
+            <namespace>/</namespace>
+          </ros>
+          <!-- camera_name 直接决定话题: /camera/image_raw, /camera/camera_info
+               (不要再往里写 image_raw, 否则会变成 /camera/image_raw/image_raw) -->
+          <camera_name>camera</camera_name>
+          <frame_name>${prefix}camera_link</frame_name>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+</robot>

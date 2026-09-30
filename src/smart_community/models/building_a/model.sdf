@@ -1,0 +1,48 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="building_a">
+    <static>true</static>
+    <link name="building">
+      <collision name="collision">
+        <geometry><box><size>1.22 0.85 1.1</size></box></geometry>
+      </collision>
+      <visual name="body">
+        <geometry><box><size>1.22 0.85 1.1</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://building_a/materials</uri>
+            <name>BuildingA/Facade</name>
+          </script>
+        </material>
+      </visual>
+      <visual name="roof">
+        <pose>0 0 0.5800000000000001 0 0 0</pose>
+        <geometry><box><size>1.28 0.9099999999999999 0.06</size></box></geometry>
+        <material>
+          <ambient>0.34 0.35 0.37 1</ambient>
+          <diffuse>0.34 0.35 0.37 1</diffuse>
+        </material>
+      </visual>
+      <visual name="sign_north">
+        <pose>0 0.437 0.25000000000000006 0 0 0</pose>
+        <geometry><box><size>1.0492 0.02 0.26</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://building_a/materials</uri>
+            <name>BuildingA/Sign</name>
+          </script>
+        </material>
+      </visual>
+      <visual name="sign_south">
+        <pose>0 -0.437 0.25000000000000006 0 0 0</pose>
+        <geometry><box><size>1.0492 0.02 0.26</size></box></geometry>
+        <material>
+          <script>
+            <uri>model://building_a/materials</uri>
+            <name>BuildingA/SignSouth</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

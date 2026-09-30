@@ -1,0 +1,112 @@
+material TrashBins/Hazardous
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture label_hazardous.png
+      }
+    }
+  }
+}
+
+material TrashBins/HazardousSouth
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture label_hazardous.png
+      }
+    }
+  }
+}
+
+material TrashBins/Recycle
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture label_recycle.png
+      }
+    }
+  }
+}
+
+material TrashBins/RecycleSouth
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture label_recycle.png
+      }
+    }
+  }
+}
+
+material TrashBins/Kitchen
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture label_kitchen.png
+      }
+    }
+  }
+}
+
+material TrashBins/KitchenSouth
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture label_kitchen.png
+      }
+    }
+  }
+}
+
+material TrashBins/Other
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture label_other.png
+      }
+    }
+  }
+}
+
+material TrashBins/OtherSouth
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture label_other.png
+      }
+    }
+  }
+}
+

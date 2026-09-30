@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!-- 临时水平视角相机: 站在地面高度(z=0.3)朝本地 +x 方向看, 用来核对招牌朝向/文字有没有镜像
+     生成时用 -Y 控制朝向(0=朝东, 3.1416=朝西, 1.5708=朝北, 4.7124=朝南) -->
+<sdf version="1.6">
+  <model name="side_check">
+    <static>true</static>
+    <pose>0 0 0 0 0 0</pose>
+    <link name="cam_link">
+      <pose>0 0 0.3 0 0 0</pose>
+      <visual name="cam_vis">
+        <geometry><box><size>0.04 0.04 0.04</size></box></geometry>
+      </visual>
+      <sensor name="cam" type="camera">
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>2.0</update_rate>
+        <camera>
+          <horizontal_fov>1.2</horizontal_fov>
+          <image><width>800</width><height>600</height><format>R8G8B8</format></image>
+          <clip><near>0.05</near><far>30.0</far></clip>
+        </camera>
+        <plugin name="side_cam_ctrl" filename="libgazebo_ros_camera.so">
+          <ros><namespace>/</namespace></ros>
+          <camera_name>side_check</camera_name>
+          <frame_name>cam_link</frame_name>
+        </plugin>
+      </sensor>
+    </link>
+  </model>
+</sdf>

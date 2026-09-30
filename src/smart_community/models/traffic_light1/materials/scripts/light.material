@@ -1,0 +1,43 @@
+material TrafficLight/Red
+{
+  technique
+  {
+    pass
+    {
+      diffuse 1 1 1 1
+      texture_unit
+      {
+        texture red.jpg
+      }
+    }
+  }
+}
+material TrafficLight/Yellow
+{
+  technique
+  {
+    pass
+    {
+      diffuse 1 1 1 1
+      texture_unit
+      {
+        texture yellow.jpg
+      }
+    }
+  }
+}
+material TrafficLight/Green
+{
+  technique
+  {
+    pass
+    {
+      diffuse 1 1 1 1
+      texture_unit
+      {
+        texture green.jpg
+      }
+    }
+  }
+}
+

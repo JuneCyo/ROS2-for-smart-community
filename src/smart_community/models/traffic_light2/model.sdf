@@ -1,0 +1,154 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+<model name="traffic_light2">
+  <static>true</static>
+
+  <!-- 左立柱 -->
+  <link name="pole_left">
+    <visual name="pole_left_vis">
+      <geometry>
+        <box>
+          <size>0.1 0.1 2.0</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.3 0.3 0.3 1</ambient>
+        <diffuse>0.3 0.3 0.3 1</diffuse>
+      </material>
+    </visual>
+    <collision name="pole_left_col">
+      <geometry>
+        <box>
+          <size>0.1 0.1 2.0</size>
+        </box>
+      </geometry>
+    </collision>
+    <pose>-0.73 0 1.0 0 0 0</pose>
+  </link>
+
+  <!-- 右立柱 -->
+  <link name="pole_right">
+    <visual name="pole_right_vis">
+      <geometry>
+        <box>
+          <size>0.1 0.1 2.0</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.3 0.3 0.3 1</ambient>
+        <diffuse>0.3 0.3 0.3 1</diffuse>
+      </material>
+    </visual>
+    <collision name="pole_right_col">
+      <geometry>
+        <box>
+          <size>0.1 0.1 2.0</size>
+        </box>
+      </geometry>
+    </collision>
+    <pose>0.72 0 1.0 0 0 0</pose>
+  </link>
+
+  <!-- 横向横梁 -->
+  <link name="cross_beam">
+    <visual name="cross_beam_vis">
+      <geometry>
+        <box>
+          <size>1.4 0.12 0.12</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.2 0.2 0.2 1</ambient>
+        <diffuse>0.2 0.2 0.2 1</diffuse>
+      </material>
+    </visual>
+    <collision name="cross_beam_col">
+      <geometry>
+        <box>
+          <size>1.46 0.12 0.12</size>
+        </box>
+      </geometry>
+    </collision>
+    <pose>0 0 1.85 0 0 0</pose>
+  </link>
+
+  <!-- 灯罩外壳，被横梁架起来 -->
+  <link name="light_housing">
+    <visual name="housing_vis">
+      <geometry>
+        <box>
+          <size>0.8 0.15 0.4</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.1 0.1 0.1 1</ambient>
+        <diffuse>0.1 0.1 0.1 1</diffuse>
+      </material>
+    </visual>
+    <collision name="housing_col">
+      <geometry>
+        <box>
+          <size>0.8 0.15 0.4</size>
+        </box>
+      </geometry>
+    </collision>
+    <pose>0 0 1.7 0 0 0</pose>
+  </link>
+
+<!-- 红灯 红色纯色 -->
+<link name="light_red">
+  <visual name="red_vis">
+    <geometry>
+      <cylinder>
+        <radius>0.12</radius>
+        <length>0.02</length>
+      </cylinder>
+    </geometry>
+    <material>
+      <ambient>1 0 0 1</ambient>
+      <diffuse>1 0 0 1</diffuse>
+    </material>
+  </visual>
+  <pose>-0.25 0.1 1.7 1.5708 0 0</pose>
+</link>
+
+<!-- 黄灯 黄色纯色 -->
+<link name="light_yellow">
+  <visual name="yellow_vis">
+    <geometry>
+      <cylinder>
+        <radius>0.12</radius>
+        <length>0.02</length>
+      </cylinder>
+    </geometry>
+    <material>
+      <ambient>1 1 0 1</ambient>
+      <diffuse>1 1 0 1</diffuse>
+    </material>
+  </visual>
+  <pose>0 0.1 1.7 1.5708 0 0</pose>
+</link>
+
+<!-- 绿灯 绿色纯色 -->
+<link name="light_green">
+  <visual name="green_vis">
+    <geometry>
+      <cylinder>
+        <radius>0.12</radius>
+        <length>0.02</length>
+      </cylinder>
+    </geometry>
+    <material>
+      <ambient>0 1 0 1</ambient>
+      <diffuse>0 1 0 1</diffuse>
+    </material>
+  </visual>
+  <pose>0.25 0.1 1.7 1.5708 0 0</pose>
+</link>
+
+
+
+
+</model>
+</sdf>
+

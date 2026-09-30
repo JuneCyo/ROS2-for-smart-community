@@ -1,0 +1,14 @@
+material Car3/Board
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture Car3.jpg
+      }
+    }
+  }
+}
+

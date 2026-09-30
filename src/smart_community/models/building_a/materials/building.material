@@ -1,0 +1,42 @@
+material BuildingA/Facade
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture facade_building_a.jpg
+      }
+    }
+  }
+}
+
+material BuildingA/Sign
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture sign_building_a.png
+      }
+    }
+  }
+}
+
+material BuildingA/SignSouth
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture sign_building_a.png
+      }
+    }
+  }
+}
+

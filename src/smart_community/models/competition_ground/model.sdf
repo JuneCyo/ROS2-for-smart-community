@@ -1,0 +1,126 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+<model name="competition_ground">
+  <static>true</static>
+
+  <!-- 地面 -->
+ <link name="ground_plane">
+  <visual name="ground_visual">
+    <geometry>
+      <box>
+        <size>10 10 0.1</size>
+      </box>
+    </geometry>
+  <material>
+  <script>
+    <uri>model://competition_ground/materials/scripts</uri>
+    <uri>model://competition_ground/materials/textures</uri>
+    <name>CompetitionField/Ground</name>
+  </script>
+</material>
+  </visual>
+
+  <collision name="ground_col">
+    <geometry>
+      <box>
+        <size>10 10 0.1</size>
+      </box>
+    </geometry>
+  </collision>
+</link>
+
+  <!-- 北墙 -->
+  <link name="wall_north">
+    <visual name="wall_north_vis">
+      <geometry>
+        <box>
+          <size>10 0.2 2</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.2 0.2 0.2 1</ambient>
+        <diffuse>0.2 0.2 0.2 1</diffuse>
+      </material>
+    </visual>
+    <collision name="wall_north_col">
+      <geometry>
+        <box>
+          <size>10 0.2 2</size>
+        </box>
+      </geometry>
+    </collision>
+    <pose>0 4.9 1 0 0 0</pose>
+  </link>
+
+  <!-- 南墙 -->
+  <link name="wall_south">
+    <visual name="wall_south_vis">
+      <geometry>
+        <box>
+          <size>10 0.2 2</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.2 0.2 0.2 1</ambient>
+        <diffuse>0.2 0.2 0.2 1</diffuse>
+      </material>
+    </visual>
+    <collision name="wall_south_col">
+      <geometry>
+        <box>
+          <size>10 0.2 2</size>
+        </box>
+      </geometry>
+    </collision>
+    <pose>0 -4.9 1 0 0 0</pose>
+  </link>
+
+  <!-- 东墙 -->
+  <link name="wall_east">
+    <visual name="wall_east_vis">
+      <geometry>
+        <box>
+          <size>0.2 9.8 2</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.2 0.2 0.2 1</ambient>
+        <diffuse>0.2 0.2 0.2 1</diffuse>
+      </material>
+    </visual>
+    <collision name="wall_east_col">
+      <geometry>
+        <box>
+          <size>0.2 9.8 2</size>
+        </box>
+      </geometry>
+    </collision>
+    <pose>4.9 0 1 0 0 0</pose>
+  </link>
+
+  <!-- 西墙 -->
+  <link name="wall_west">
+    <visual name="wall_west_vis">
+      <geometry>
+        <box>
+          <size>0.2 9.8 2</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.2 0.2 0.2 1</ambient>
+        <diffuse>0.2 0.2 0.2 1</diffuse>
+      </material>
+    </visual>
+    <collision name="wall_west_col">
+      <geometry>
+        <box>
+          <size>0.2 9.8 2</size>
+        </box>
+      </geometry>
+    </collision>
+    <pose>-4.9 0 1 0 0 0</pose>
+  </link>
+
+</model>
+</sdf>
+

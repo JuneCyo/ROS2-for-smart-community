@@ -1,0 +1,14 @@
+material Car2/Board
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture Car2.jpg
+      }
+    }
+  }
+}
+

@@ -1,0 +1,14 @@
+material PersonB/Board
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture PersonB.jpg
+      }
+    }
+  }
+}
+

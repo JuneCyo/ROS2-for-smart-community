@@ -1,0 +1,243 @@
+<?xml version="1.0"?>
+<!--
+  my_robot —— 轮式机器人 URDF/Xacro 模型 (差速底盘 + 360°激光雷达 + 相机)
+  =====================================================================
+    几何: 车体 0.30 m(长) x 0.20 m(宽) x 0.08 m(高), 两轮差速 + 前后万向轮
+    驱动: libgazebo_ros_diff_drive.so  (/cmd_vel 订阅, /odom 发布)
+    传感器: 360° 激光雷达 -> /scan        (libgazebo_ros_ray_sensor.so)
+            单目相机      -> /camera/image_raw, /camera/camera_info
+                                            (libgazebo_ros_camera.so)
+    关节: libgazebo_ros_joint_state_publisher.so -> /joint_states
+    TF 树: odom -> base_footprint -> base_link -> {left_wheel_link, right_wheel_link,
+                                                  lidar_link, camera_link}
+
+  单独查看/导出 URDF:
+      xacro $(ros2 pkg prefix my_robot)/share/my_robot/urdf/my_robot.urdf.xacro > /tmp/my_robot.urdf
+      check_urdf /tmp/my_robot.urdf          # 可选
+-->
+<robot name="my_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find my_robot)/urdf/sensors.xacro"/>
+
+  <!-- ===================== 车身配色 ===================== -->
+  <material name="mr_body">  <color rgba="0.13 0.36 0.78 1.0"/></material>
+  <material name="mr_wheel"> <color rgba="0.10 0.10 0.12 1.0"/></material>
+
+  <!-- 不需要某个传感器时可以关掉: xacro ... enable_lidar:=false -->
+  <xacro:arg name="enable_lidar"  default="true"/>
+  <xacro:arg name="enable_camera" default="true"/>
+
+  <!-- ===================== 可调几何参数 ===================== -->
+  <xacro:property name="body_length" value="0.30"/>   <!-- 车体长(x) -->
+  <xacro:property name="body_width"  value="0.20"/>   <!-- 车体宽(y) -->
+  <xacro:property name="body_height" value="0.08"/>   <!-- 车体高(z) -->
+  <xacro:property name="body_z"      value="0.055"/>  <!-- base_link 离地高度 -->
+
+  <xacro:property name="wheel_r"     value="0.035"/>  <!-- 驱动轮半径 -->
+  <xacro:property name="wheel_w"     value="0.020"/>  <!-- 驱动轮厚度 -->
+  <xacro:property name="wheel_sep"   value="0.220"/>  <!-- 左右轮中心距 -->
+  <xacro:property name="wheel_x"     value="-0.010"/>
+
+  <!-- ★ 关键约束: 轮心离地高度必须 = 轮半径, 万向轮同理。
+       否则车体会压在(或吊在)轮子上, 表现为"下发速度但车不动/原地打滑"。 -->
+  <xacro:property name="wheel_z"     value="${-(body_z - wheel_r)}"/>   <!-- -0.020 -->
+  <xacro:property name="caster_r"    value="0.012"/>
+  <xacro:property name="caster_z"    value="${-(body_z - caster_r)}"/>  <!-- -0.043 -->
+
+  <!-- 不要用 pi 作变量名(xacro 内置同名符号, 会有 warning) -->
+  <xacro:property name="mr_pi"       value="3.14159265"/>
+
+  <!-- ===================== 惯性辅助宏 ===================== -->
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(y*y+z*z)/12.0}" ixy="0" ixz="0"
+               iyy="${m*(x*x+z*z)/12.0}" iyz="0"
+               izz="${m*(x*x+y*y)/12.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="cyl_inertia" params="m r l">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(3.0*r*r+l*l)/12.0}" ixy="0" ixz="0"
+               iyy="${m*(3.0*r*r+l*l)/12.0}" iyz="0"
+               izz="${m*r*r/2.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- ===================== 底盘 ===================== -->
+  <!-- base_footprint: 车体在地面的投影, 也是 Gazebo 模型原点(生成时的 (x,y,z) 就是它) -->
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <!-- 车身 -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${body_length} ${body_width} ${body_height}"/></geometry>
+      <material name="mr_body"/>
+    </visual>
+    <!-- 顶板 -->
+    <visual>
+      <origin xyz="-0.02 0 ${body_height/2 + 0.008}" rpy="0 0 0"/>
+      <geometry><box size="${body_length*0.70} ${body_width*0.80} 0.016"/></geometry>
+      <material name="mr_gray"/>
+    </visual>
+    <!-- 前脸装饰条 -->
+    <visual>
+      <origin xyz="${body_length/2 + 0.002} 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.004 ${body_width*0.7} ${body_height*0.5}"/></geometry>
+      <material name="mr_dark"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${body_length} ${body_width} ${body_height}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="1.20" x="${body_length}" y="${body_width}" z="${body_height}"/>
+  </link>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${body_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ===================== 驱动轮 (左右) ===================== -->
+  <xacro:macro name="drive_wheel" params="side reflect">
+    <link name="${side}_wheel_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${mr_pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_r}" length="${wheel_w}"/></geometry>
+        <material name="mr_wheel"/>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0" rpy="${mr_pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_r*0.5}" length="${wheel_w*1.2}"/></geometry>
+        <material name="mr_gray"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${mr_pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_r}" length="${wheel_w}"/></geometry>
+      </collision>
+      <xacro:cyl_inertia m="0.05" r="${wheel_r}" l="${wheel_w}"/>
+    </link>
+
+    <joint name="${side}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${side}_wheel_link"/>
+      <origin xyz="${wheel_x} ${reflect*wheel_sep/2.0} ${wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <gazebo reference="${side}_wheel_link">
+      <!-- 轮子抓地力要大, 否则打滑 -->
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+      <kp>100000.0</kp>
+      <kd>10.0</kd>
+      <!-- minDepth 必须给 0: 车重 1.3kg / kp=1e5 时轮子只压入地面约 0.1~0.2mm,
+           若 minDepth 设成 0.5mm, 这些接触会被判为无效 -> 整车改由两个低摩擦
+           万向轮(mu=0.02)支撑, 机器人就会以约 1~2 mm/s 的速度自己慢慢滑走。 -->
+      <minDepth>0.0</minDepth>
+      <maxVel>0.1</maxVel>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:drive_wheel side="left"  reflect="1"/>
+  <xacro:drive_wheel side="right" reflect="-1"/>
+
+  <!-- ===================== 万向轮 (前后各一个) ===================== -->
+  <xacro:macro name="caster" params="name x">
+    <link name="${name}_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><sphere radius="${caster_r}"/></geometry>
+        <material name="mr_gray"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><sphere radius="${caster_r}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.02"/>
+        <inertia ixx="2.0e-6" ixy="0" ixz="0" iyy="2.0e-6" iyz="0" izz="2.0e-6"/>
+      </inertial>
+    </link>
+
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${name}_link"/>
+      <origin xyz="${x} 0 ${caster_z}" rpy="0 0 0"/>
+    </joint>
+
+    <gazebo reference="${name}_link">
+      <!-- 万向轮是"固定关节 + 球体", 靠滑动代替滚动, 摩擦不能为 0:
+           给 0.02 时整车几乎无侧向阻力, 两个驱动轮的圆柱多边形接触会产生
+           极小的"下坡"力矩, 机器人会以约 0.7 mm/s 自己慢慢往前溜(实测)。
+           给到 0.4 足以吃掉这点力矩, 又远小于驱动轮的 1.0, 不影响转弯。 -->
+      <mu1>0.4</mu1>
+      <mu2>0.4</mu2>
+      <kp>100000.0</kp>
+      <kd>10.0</kd>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:caster name="caster_front" x="${body_length/2 - 0.035}"/>
+  <xacro:caster name="caster_rear"  x="${-body_length/2 + 0.035}"/>
+
+  <!-- ===================== 传感器安装 ===================== -->
+  <!-- 激光雷达: 车顶, 扫描平面在 base_link 上方 0.065 m (离地约 0.12 m) -->
+  <xacro:if value="$(arg enable_lidar)">
+    <xacro:my_lidar_360 prefix="" parent="base_link" xyz="0.020 0 ${body_height/2 + 0.025}"/>
+  </xacro:if>
+  <!-- 相机: 车头正前方, 沿 +x 看 -->
+  <xacro:if value="$(arg enable_camera)">
+    <xacro:my_camera prefix="" parent="base_link" xyz="${body_length/2 + 0.012} 0 0.022"/>
+  </xacro:if>
+
+  <!-- ===================== Gazebo 插件 ===================== -->
+  <gazebo>
+    <!-- 差速驱动: 订阅 /cmd_vel, 发布 /odom 与 odom->base_footprint 的 TF -->
+    <plugin name="diff_drive" filename="libgazebo_ros_diff_drive.so">
+      <ros>
+        <namespace>/</namespace>
+      </ros>
+      <update_rate>50</update_rate>
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>${wheel_sep}</wheel_separation>
+      <wheel_diameter>${2*wheel_r}</wheel_diameter>
+      <max_wheel_torque>5.0</max_wheel_torque>
+      <max_wheel_acceleration>5.0</max_wheel_acceleration>
+      <command_topic>cmd_vel</command_topic>
+      <odometry_topic>odom</odometry_topic>
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <!-- 轮子的 TF 交给 robot_state_publisher 用 /joint_states 算, 避免重复发布 -->
+      <publish_wheel_tf>false</publish_wheel_tf>
+      <odometry_source>1</odometry_source>
+    </plugin>
+
+    <!-- 关节状态 -> /joint_states (robot_state_publisher 用它算轮子 TF) -->
+    <plugin name="joint_state_publisher" filename="libgazebo_ros_joint_state_publisher.so">
+      <ros>
+        <namespace>/</namespace>
+      </ros>
+      <update_rate>50</update_rate>
+      <joint_name>left_wheel_joint</joint_name>
+      <joint_name>right_wheel_joint</joint_name>
+    </plugin>
+  </gazebo>
+
+  <!-- 车体接触参数 -->
+  <gazebo reference="base_link">
+    <mu1>0.6</mu1>
+    <mu2>0.6</mu2>
+    <kp>100000.0</kp>
+    <kd>10.0</kd>
+    <selfCollide>false</selfCollide>
+  </gazebo>
+
+</robot>

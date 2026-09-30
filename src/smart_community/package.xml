@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>smart_community</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="violet@todo.todo">violet</maintainer>
+  <license>TODO: License declaration</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>ros_gz_sim</build_depend>
+  <build_export_depend>ros_gz_sim</build_export_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+
+  <build_depend>ros_gz_bridge</build_depend>
+  <build_export_depend>ros_gz_bridge</build_export_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+
+  <build_depend>ros_gz_interfaces</build_depend>
+  <build_export_depend>ros_gz_interfaces</build_export_depend>
+  <exec_depend>ros_gz_interfaces</exec_depend>
+
+  <build_depend>geometry_msgs</build_depend>
+  <build_export_depend>geometry_msgs</build_export_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+
+  <build_depend>nav_msgs</build_depend>
+  <build_export_depend>nav_msgs</build_export_depend>
+  <exec_depend>nav_msgs</exec_depend>
+
+  <build_depend>sensor_msgs</build_depend>
+  <build_export_depend>sensor_msgs</build_export_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+
+  <build_depend>tf2_msgs</build_depend>
+  <build_export_depend>tf2_msgs</build_export_depend>
+  <exec_depend>tf2_msgs</exec_depend>
+
+  <build_depend>gazebo_msgs</build_depend>
+  <build_export_depend>gazebo_msgs</build_export_depend>
+  <exec_depend>gazebo_msgs</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+
