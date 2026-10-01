@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <sdf version="1.6">
   <world name="competition_world">
+  <plugin name="traffic_signal_plugin" filename="libtraffic_signal_plugin.so"/>
   
 <plugin name="gazebo_ros" filename="libgazebo_ros.so">
   <ros>

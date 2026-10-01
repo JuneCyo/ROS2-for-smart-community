@@ -19,15 +19,15 @@ ros2 launch my_robot bringup_navigation.launch.py
 
 一键启动默认同时打开 Gazebo 和 RViz，并自动运行路线。RViz 在 Gazebo 启动约 10 秒后由导航阶段打开。若当前终端的 `DISPLAY` 为空，在本机图形桌面使用 `DISPLAY=:0 ros2 launch my_robot bringup_navigation.launch.py gui:=true rviz:=true auto_route:=true`。
 
-2 核 / 4 GB 的 VMware 虚拟机默认采用轻量配置：使用可用的 `vmwgfx` OpenGL 加速，不强制 CPU 软件渲染；自动导航关闭不使用的相机（保留 `/scan`），只启动定位、Nav2 路径规划器和速度平滑器；Gazebo 物理更新目标 500 Hz，RViz 目标帧率设为 45 FPS 且默认关闭 TF 可视化。RViz 用 `/map_obstacles` 点云显示地图占用栅格，绕开当前 VMware 驱动下 RViz Map 插件的 GLSL 着色器错误；AMCL 和 Nav2 仍直接使用原始 `/map`。这些配置写在启动文件、场景和 RViz 配置中，重启虚拟机后继续生效。GNOME 桌面动画也已关闭并持久保存。需要相机话题或完整 Nav2 `NavigateToPose` 服务时加 `enable_camera:=true lite_nav:=false`；若 VMware 图形驱动异常，可在命令前加 `LIBGL_ALWAYS_SOFTWARE=1` 回退。
+2 核 / 4 GB 的 VMware 虚拟机默认采用轻量配置：使用可用的 `vmwgfx` OpenGL 加速；相机为 320×240、8 Hz，专门识别灯色；只启动定位、Nav2 路径规划器和速度平滑器；Gazebo 物理更新目标 500 Hz，RViz 目标帧率设为 45 FPS 且默认关闭 TF 可视化。RViz 用 `/map_obstacles` 点云显示地图占用栅格，绕开当前 VMware 驱动下 RViz Map 插件的 GLSL 着色器错误；AMCL 和 Nav2 仍直接使用原始 `/map`。这些配置写在启动文件、场景和 RViz 配置中，重启虚拟机后继续生效。GNOME 桌面动画也已关闭并持久保存。需要完整 Nav2 `NavigateToPose` 服务时加 `lite_nav:=false`；若 VMware 图形驱动异常，可在命令前加 `LIBGL_ALWAYS_SOFTWARE=1` 回退。
 
 这一条启动命令会在终端输出 `[1/3]`、`[2/3]`、`[3/3]` 提示：
 
 | 阶段 | 启动的节点/功能 | 关键输出 |
 |---|---|---|
-| 1 | Gazebo、`robot_state_publisher`、`spawn_entity` | `/clock`、`/scan`、`/odom`、`odom→base_footprint` |
+| 1 | Gazebo、`traffic_signal_plugin`、`robot_state_publisher`、`spawn_entity` | `/clock`、`/scan`、`/camera/image_raw`、`/odom`、两个灯的 `/traffic_light/lightN/state` |
 | 2 | `map_server`、`amcl`、`amcl_tf_bridge`、Nav2 `planner_server`、`velocity_smoother`、`map_obstacles_cloud`、RViz | `/map`、`/map_obstacles`、`/amcl_pose`、`map→odom`、`/compute_path_to_pose` |
-| 3 | `navigate_traffic_lights.py` | 等待定位和 Nav2，按车道中心发布 `/cmd_vel_nav`，由平滑器输出 `/cmd_vel`，报告 11 个航点及返回起点状态 |
+| 3 | `traffic_light_vision.py`、`navigate_traffic_lights.py` | 图像识别发布 `/traffic_light/lightN/vision_state`；红黄灯停车、绿灯通行，激光发现障碍后在车道内绕行或停车；完成 11 个航点返回起点 |
 
 虚拟机省资源时用 `gui:=false rviz:=false`。只启动定位导航、不自动跑路时用 `auto_route:=false`；确认 `/amcl_pose` 后，在新终端运行：
 
@@ -50,7 +50,7 @@ ros2 run my_robot navigate_traffic_lights.py --ros-args -p use_sim_time:=true
 
 `amcl_tf_bridge` 先用配置中的初始位姿和 `/odom` 发布 `map→odom`，收到 `/amcl_pose` 后改用 AMCL 定位位姿持续刷新；这样启动时即使 AMCL 首次发布较早，也不会卡在等待 TF。当前 Humble 仿真中 AMCL 自带 TF 广播会在行驶中停止刷新，导致 Nav2 报 `Transform data too old`。配置中已关闭 AMCL 自带广播，避免同一 TF 出现两个发布者。
 
-路线脚本的 `start_at` 参数可从指定航点恢复，取值 `0..10`，默认 `0`；仅在车已位于对应路段时使用。`speed` 默认 `0.18` m/s。每段有 Nav2 通路检查和车道偏离检查，前方障碍小于 0.32 m 时停车。按贴图和通道几何检查，当前路线中心 0.18 m 半径内无白线。2026-09-30 最终双窗口轻量配置、RViz 目标 45 FPS 时仿真完成 11/11 个航点并回到起点；完成后 Gazebo `/clock` 连续 8 秒采样实时率约为 0.97，RViz 状态栏约 44 FPS。数字会随宿主机负载变化。此前记录的 AMCL 轨迹在车牌侧最南只到 `y=-2.86`，与横向白线 `y≈-3.35` 相距约 `0.49 m`，记录段按 0.18 m 半径检查无白线接触。
+路线脚本的 `start_at` 参数可从指定航点恢复，取值 `0..10`，默认 `0`；仅在车已位于对应路段时使用。`speed` 默认 `0.18` m/s。每段有 Nav2 通路检查和车道偏离检查；激光在前方约 1.25 m 发现地图中没有的障碍时，先检查两侧是否有足够空间，再在路线中心左右最多约 0.38 m 内绕行；两侧不安全或距离小于 0.32 m 时停车，障碍移走后继续。绕行候选轨迹还会查询地面贴图的白线位置和场景里的黑色通行缺口，要求车体外缘与白线至少留约 0.03 m；无法满足就停车，因此不会为躲障碍去压车牌前白线。红绿灯插件在 Gazebo Classic 中按红 5 秒、黄 2 秒、绿 5 秒切换外观和状态话题；相机节点按灯架几何位置裁剪图像识别灯色。路线在灯前同时参考图像与仿真状态，冲突时停车，图像暂时看不见灯时使用状态话题。2026-10-01 双窗口配置测试完成 11/11 个航点并返回起点，两个红灯前均出现停车等待日志；在北向直线路段临时放入半径 0.07 m 的障碍后，记录到向左绕行并最终完成 11/11 航点。障碍突然出现在车前约 0.4 m 时，小车停车，移走障碍后继续。2026-09-30 无相机轻量配置的 `/clock` 实时率约 0.97、RViz 状态栏约 44 FPS；启用相机和灯色识别后负载会提高，实际数值随宿主机变化。
 
 定位与导航自检：
 
@@ -70,7 +70,7 @@ colcon build --packages-select my_robot
 source install/setup.bash
 ```
 
-目前路线按红绿灯架的**物理通道**通过；现有 `traffic_timer.py` 使用 Gazebo Sim 接口，而本项目启动的是 Gazebo Classic，所以此流程不判断灯色，也不按红灯停车。若需遵守灯色，需另接可用的信号状态话题或相机识别节点。
+旧的 `smart_community/scripts/traffic_timer.py` 使用 Gazebo Sim 接口，不参与当前 Gazebo Classic 启动；实际切灯由 `traffic_signal_plugin` 完成。图像识别依赖当前场地中的两个已知灯架位置，换场地时需更新 `traffic_light_vision.py` 的 `LIGHTS` 坐标和相机几何参数。
 
 ---
 
@@ -167,7 +167,7 @@ my_robot/
 | `left_wheel_link` / `right_wheel_link` | cylinder r=0.035 w=0.020 | 驱动轮，轮距 0.22 m，`continuous` 关节 |
 | `caster_front_link` / `caster_rear_link` | sphere r=0.012 | 万向轮（固定关节 + 极低摩擦） |
 | `lidar_link` | cylinder r=0.035 h=0.040 | 车顶激光雷达，扫描平面离地 ≈ 0.12 m |
-| `camera_link` | box 0.028×0.060×0.028 | 车头相机，沿 **+x** 方向看 |
+| `camera_link` | box 0.028×0.060×0.028 | 车头相机，沿 **+x** 方向上仰约 23° |
 
 坐标系 / TF 树：
 
@@ -194,7 +194,7 @@ odom ──(diff_drive 插件)──> base_footprint ──(固定关节)──>
 | 发布 | `/odom` | `nav_msgs/Odometry` | 同上（含 `odom→base_footprint` TF） |
 | 发布 | `/joint_states` | `sensor_msgs/JointState` | `libgazebo_ros_joint_state_publisher.so` |
 | 发布 | `/scan` | `sensor_msgs/LaserScan` | `libgazebo_ros_ray_sensor.so`（360 线，10 Hz，0.05–12 m） |
-| 发布 | `/camera/image_raw`, `/camera/camera_info` | `sensor_msgs/Image`, `CameraInfo` | `libgazebo_ros_camera.so`（640×480，15 Hz） |
+| 发布 | `/camera/image_raw`, `/camera/camera_info` | `sensor_msgs/Image`, `CameraInfo` | `libgazebo_ros_camera.so`（320×240，8 Hz） |
 | 发布 | `/robot_description`, TF | `std_msgs/String`, `tf2_msgs/TFMessage` | `robot_state_publisher` |
 
 自检命令：
@@ -233,7 +233,7 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard   # 键盘遥控（i/j/k/l�
 | `Package 'my_robot' not found` | 忘了 `colcon build --packages-select my_robot && source install/setup.bash` |
 | Gazebo 里场地全灰/找不到 `model://xxx` | `GAZEBO_MODEL_PATH` 没有包含 `smart_community/models`（launch 已自动注入；手工跑 `gzserver` 时需自己 export） |
 | 机器人掉到地面以下 | `spawn_delay` 太小、场地还没加载完 → 加大；或 `z` 给大一点 |
-| 自动导航有 `/scan`、`/odom` 但没有图像话题 | 轻量模式默认 `enable_camera:=false`；需要相机时加 `enable_camera:=true`。若启用后仍没有图像，检查 X 显示和 Gazebo 图形日志 |
+| 自动导航有 `/scan`、`/odom` 但没有图像话题 | 自动导航默认 `enable_camera:=true`；检查 Gazebo 图形日志、相机插件和 `ros2 topic hz /camera/image_raw` |
 | 有指令但车不动 / 原地打滑 | 检查轮心离地是否等于轮半径；`/odom` 是否变化；轮子 `mu1/mu2` 是否够大 |
 | 反复调试后话题有多个发布者、行为异常 | DDS 残留：`rm -f /dev/shm/*fastrtps* ; ros2 daemon stop && ros2 daemon start` |
 
@@ -282,7 +282,7 @@ python3 $P/tools/grab_image.py /camera/image_raw /tmp/robot_cam.png
 | 前进 | `/cmd_vel.linear.x=0.1` → 4 s 位移 0.47 m，`/odom` 同步 |
 | 转向 | `/cmd_vel.angular.z=0.5` → 3 s 后 yaw +2.41 rad（逆时针，方向正确） |
 | 激光 | `/scan` 约 9.9 Hz，360 线，`angle_min=-π`、`angle_max=+π`、`range_max=12` |
-| 相机 | `/camera/image_raw` 640×480 rgb8 正常出图，`/camera/camera_info` 正常 |
+| 相机 | 自动导航为 `/camera/image_raw` 320×240 rgb8、8 Hz，`/camera/camera_info` 正常；相机向上倾约 23° |
 | TF | `odom → base_footprint → {base_link, left/right_wheel_link, lidar_link, camera_link}` |
 
 两个踩过的坑（代码里都有注释）：

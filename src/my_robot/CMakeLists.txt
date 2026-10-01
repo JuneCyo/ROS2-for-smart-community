@@ -21,6 +21,7 @@ install(PROGRAMS
   scripts/navigate_traffic_lights.py
   scripts/amcl_tf_bridge.py
   scripts/map_obstacles_cloud.py
+  scripts/traffic_light_vision.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -118,6 +118,13 @@ def generate_launch_description():
     set_resource_path = SetEnvironmentVariable(
         'GAZEBO_RESOURCE_PATH', ':'.join([p for p in res_paths if p]))
 
+    plugin_paths = []
+    if sc_share:
+        plugin_paths.append(os.path.join(os.path.dirname(os.path.dirname(sc_share)), 'lib'))
+    if os.environ.get('GAZEBO_PLUGIN_PATH'):
+        plugin_paths.append(os.environ['GAZEBO_PLUGIN_PATH'])
+    set_plugin_path = SetEnvironmentVariable('GAZEBO_PLUGIN_PATH', ':'.join(plugin_paths))
+
     # ③ 当前 VMware 虚拟机的 vmwgfx OpenGL 加速可用。默认使用它，
     #    只有图形驱动出问题时才显式设置 LIBGL_ALWAYS_SOFTWARE=1 回退。
     set_software_gl = SetEnvironmentVariable(
@@ -188,6 +195,7 @@ def generate_launch_description():
     return LaunchDescription(declared + [
         set_model_path,
         set_resource_path,
+        set_plugin_path,
         set_software_gl,
         start_gzserver,
         start_gzclient,

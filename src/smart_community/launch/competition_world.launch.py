@@ -19,10 +19,17 @@ def generate_launch_description():
         value=gazebo_model_value
     )
 
-    # 虚拟机软件渲染，解决黑屏闪退
+    plugin_dir = os.path.join(os.path.dirname(os.path.dirname(pkg_share)), "lib")
+    old_plugin_path = os.environ.get("GAZEBO_PLUGIN_PATH", "")
+    set_plugin_path = SetEnvironmentVariable(
+        name="GAZEBO_PLUGIN_PATH",
+        value=plugin_dir + (":" + old_plugin_path if old_plugin_path else "")
+    )
+
+    # 和一键导航使用同一 VMware 图形设置，允许显式回退到软件渲染。
     set_render = SetEnvironmentVariable(
         name="LIBGL_ALWAYS_SOFTWARE",
-        value="1"
+        value=os.environ.get("LIBGL_ALWAYS_SOFTWARE", "0")
     )
 
     world_file = os.path.join(pkg_share, "worlds", "competition_world.sdf")
@@ -36,6 +43,7 @@ def generate_launch_description():
     return LaunchDescription([
         set_render,
         set_model_path,
+        set_plugin_path,
         start_gazebo
     ])
 

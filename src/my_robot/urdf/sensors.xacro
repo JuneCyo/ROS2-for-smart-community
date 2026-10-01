@@ -86,7 +86,7 @@
   </xacro:macro>
 
   <!-- ===================== 单目相机 ===================== -->
-  <xacro:macro name="my_camera" params="prefix parent xyz fov:=1.2217 width:=640 height:=480 update_rate:=15.0">
+  <xacro:macro name="my_camera" params="prefix parent xyz fov:=1.6 width:=320 height:=240 update_rate:=8.0">
     <link name="${prefix}camera_link">
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -112,7 +112,8 @@
     <joint name="${prefix}camera_joint" type="fixed">
       <parent link="${parent}"/>
       <child link="${prefix}camera_link"/>
-      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <!-- 向上看约 23°，在红灯停车线前仍能看见高处的灯盘。 -->
+      <origin xyz="${xyz}" rpy="0 -0.4 0"/>
     </joint>
 
     <gazebo reference="${prefix}camera_link">
