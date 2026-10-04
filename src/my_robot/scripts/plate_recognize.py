@@ -1,174 +1,105 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Plate Recognizer: LPRNet 国内蓝牌车牌识别
-订阅：相机图像 /camera/image_raw  + YOLO检测框 /plate_detect
-发布识别结果到 /plate_text
-"""
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Image
-from std_msgs.msg import String
-from geometry_msgs.msg import Float32MultiArray
-from cv_bridge import CvBridge
+"""Read the text in the centered plate box and publish confirmed OCR candidates."""
+
+import math
+import re
+
 import cv2
-import numpy as np
-import torch
-import torch.nn as nn
+import rclpy
+from cv_bridge import CvBridge
+from rapidocr import RapidOCR
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import Image
+from std_msgs.msg import Float32MultiArray, String
 
-# ====================== 国内车牌完整字符集（蓝牌7位） ======================
-CHARS = [
-    # 省份
-    "京", "沪", "津", "渝", "冀", "晋", "蒙", "辽", "吉", "黑",
-    "苏", "浙", "皖", "闽", "赣", "鲁", "豫", "鄂", "湘", "粤",
-    "桂", "琼", "川", "贵", "云", "藏", "陕", "甘", "青", "宁", "新",
-    # 字母数字
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
-    "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-    "U", "V", "W", "X", "Y", "Z"
-]
-CHAR_NUM = len(CHARS)
-BLANK_INDEX = CHAR_NUM # CTC空白符
 
-# ====================== 标准LPRNet  ======================
-class LPRNet(nn.Module):
-    def __init__(self, class_num):
-        super(LPRNet, self).__init__()
-        self.backbone = nn.Sequential(
-            nn.Conv2d(3, 64, 3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+PROVINCES = '京沪津渝冀晋蒙辽吉黑苏浙皖闽赣鲁豫鄂湘粤桂琼川贵云藏陕甘青宁新'
+PLATE_PATTERN = re.compile(rf'[{PROVINCES}][A-Z][A-Z0-9]{{5,6}}')
 
-            nn.Conv2d(64, 128, 3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
 
-            nn.Conv2d(128, 256, 3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, 3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2,1), stride=(2,1)),
+def normalize_plate(text):
+    """Accept only a complete Chinese plate; never turn a partial OCR result into a plate."""
+    cleaned = re.sub(r'[\s·•.\-]', '', text).upper()
+    return cleaned if PLATE_PATTERN.fullmatch(cleaned) else None
 
-            nn.Conv2d(256, 512, 3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.Conv2d(512, 512, 3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2,1), stride=(2,1)),
 
-            nn.Conv2d(512, 512, 3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-        )
-        self.container = nn.Sequential(
-            nn.Conv2d(512, 512, 3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.Conv2d(512, class_num+1, kernel_size=1, stride=1, padding=0),
-        )
-
-    def forward(self, x):
-        x = self.backbone(x)
-        x = self.container(x)
-        x = x.permute(2,0,3,1)
-        return x
-
-# CTC解码：去重复，去除空白字符
-def ctc_decode(pred, blank_idx):
-    pred_idx = np.argmax(pred, axis=1)
-    res = []
-    last = blank_idx
-    for idx in pred_idx:
-        if idx != blank_idx and idx != last:
-            res.append(CHARS[idx])
-        last = idx
-    return "".join(res)
+def crop_plate(frame, detection):
+    """The detector publishes pixel coordinates, with a small border for OCR."""
+    if len(detection) != 5:
+        return None
+    x1, y1, x2, y2, confidence = detection
+    if confidence < 0.3 or x2 <= x1 or y2 <= y1:
+        return None
+    height, width = frame.shape[:2]
+    pad_x = max(2, round((x2 - x1) * 0.05))
+    pad_y = max(2, round((y2 - y1) * 0.10))
+    left = max(0, math.floor(x1) - pad_x)
+    top = max(0, math.floor(y1) - pad_y)
+    right = min(width, math.ceil(x2) + pad_x)
+    bottom = min(height, math.ceil(y2) + pad_y)
+    crop = frame[top:bottom, left:right]
+    return crop if crop.size else None
 
 
 class PlateRecognizer(Node):
     def __init__(self):
         super().__init__('plate_recognizer')
         self.bridge = CvBridge()
-        self.latest_cv_img = None
-
-        # 订阅相机图像 和 YOLO输出车牌框
-        self.img_sub = self.create_subscription(
-            Image, "/camera/image_raw", self.image_callback, 10
-        )
-        self.box_sub = self.create_subscription(
-            Float32MultiArray, "/plate_detect", self.box_callback, 10
-        )
-        # 发布识别车牌文本
-        self.plate_pub = self.create_publisher(String, "/plate_text", 10)
-
-        # CPU/GPU自动选择
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.model = LPRNet(class_num=CHAR_NUM).to(self.device)
-
-        # =========【重要】加载预训练权重 =========
-        # 你需要下载国内车牌预训练lprnet.pth，放到scripts目录
-        weight_path = "/home/voilet/ros2_ws/src/my_robot/scripts/lprnet.pth"
-        try:
-            ckpt = torch.load(weight_path, map_location=self.device)
-            self.model.load_state_dict(ckpt)
-            self.get_logger().info(f"成功加载LPRNet预训练权重：{weight_path}")
-        except Exception as e:
-            self.get_logger().error(f"权重加载失败！检查路径：{e}")
-
-        self.model.eval()
-        self.get_logger().info("LPRNet车牌识别节点就绪，等待YOLO检测框")
+        self.ocr = RapidOCR()
+        self.latest_image = None
+        self.latest_image_ns = 0
+        self.last_ocr_ns = 0
+        self.plate_pub = self.create_publisher(String, '/plate_text', 10)
+        image_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.create_subscription(Image, '/camera/image_raw', self.image_callback, image_qos)
+        self.create_subscription(Float32MultiArray, '/plate_detect', self.box_callback, 1)
+        self.get_logger().info('车牌文字识别已启动，结果发布到 /plate_text')
 
     def image_callback(self, msg):
         try:
-            self.latest_cv_img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        except Exception as e:
-            self.get_logger().warn(f"图像转换失败 {e}")
+            self.latest_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            self.latest_image_ns = self.get_clock().now().nanoseconds
+        except Exception as exc:
+            self.get_logger().warn(f'车牌识别图像转换失败：{exc}', throttle_duration_sec=5.0)
 
     def box_callback(self, msg):
-        if self.latest_cv_img is None:
+        now_ns = self.get_clock().now().nanoseconds
+        if (self.latest_image is None or now_ns - self.latest_image_ns > 1_000_000_000
+                or now_ns - self.last_ocr_ns < 350_000_000):
             return
-        h_img, w_img = self.latest_cv_img.shape[:2]
-        data = msg.data
-        x1, y1, x2, y2, conf = data
-
-        # YOLO输出归一化坐标转像素坐标
-        x1 = max(0, int(x1 * w_img))
-        y1 = max(0, int(y1 * h_img))
-        x2 = min(w_img, int(x2 * w_img))
-        y2 = min(h_img, int(y2 * h_img))
-
-        plate_crop = self.latest_cv_img[y1:y2, x1:x2]
-        if plate_crop.size == 0:
+        crop = crop_plate(self.latest_image, msg.data)
+        if crop is None:
             return
-
-        # LPRNet固定输入尺寸 (94,24)
-        plate_crop = cv2.resize(plate_crop, (94, 24))
-        # 归一化 +转tensor
-        img_tensor = torch.from_numpy(plate_crop).float()
-        img_tensor = img_tensor.permute(2, 0, 1) / 255.0
-        img_tensor = img_tensor.unsqueeze(0).to(self.device)
-
-        with torch.no_grad():
-            output = self.model(img_tensor)
-        output = output.squeeze().detach().cpu().numpy()
-        plate_result = ctc_decode(output, BLANK_INDEX)
-
-        # 发布
-        out_msg = String()
-        out_msg.data = plate_result
-        self.plate_pub.publish(out_msg)
-        self.get_logger().info(f"识别车牌: {plate_result}, 检测置信度:{conf:.2f}")
+        self.last_ocr_ns = now_ns
+        scale = max(1, min(8, math.ceil(240 / crop.shape[1])))
+        enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        try:
+            result = self.ocr(enlarged, use_det=False, use_cls=False)
+        except Exception as exc:
+            self.get_logger().warn(f'车牌 OCR 失败：{exc}', throttle_duration_sec=5.0)
+            return
+        if not result.txts or not result.scores:
+            return
+        plate_text = normalize_plate(result.txts[0])
+        if plate_text is None or result.scores[0] < 0.75:
+            return
+        self.plate_pub.publish(String(data=plate_text))
+        self.get_logger().info(f'读到车牌：{plate_text}，OCR 置信度 {result.scores[0]:.2f}',
+                               throttle_duration_sec=5.0)
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = PlateRecognizer()
-    rclpy.spin(node)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     node.destroy_node()
-    rclpy.shutdown()
+    if rclpy.ok():
+        rclpy.shutdown()
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
-

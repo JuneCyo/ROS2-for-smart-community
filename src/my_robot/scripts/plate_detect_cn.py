@@ -9,6 +9,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 from cv_bridge import CvBridge
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 import cv2
 from ultralytics import YOLO
 from ament_index_python.packages import get_package_share_directory
@@ -26,8 +27,9 @@ class PlateDetectCNNode(Node):
         model_path = os.path.join(pkg_dir, 'models', 'plate_detect.pt')
         self.model = YOLO(model_path)
 
+        image_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.img_sub = self.create_subscription(
-            Image, "/camera/image_raw", self.img_callback, 10)
+            Image, "/camera/image_raw", self.img_callback, image_qos)
         self.plate_pub = self.create_publisher(Float32MultiArray, "/plate_detect", 10)
         self.get_logger().info("✅车牌检测节点启动，无角度/锁定限制")
 

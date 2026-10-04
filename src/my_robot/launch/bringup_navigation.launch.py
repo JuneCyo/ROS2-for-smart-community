@@ -57,6 +57,9 @@ def generate_launch_description():
             Node(package='my_robot', executable='plate_detect_cn.py',
                  name='plate_detect_cn', output='screen',
                  parameters=[{'use_sim_time': True}]),
+            Node(package='my_robot', executable='plate_recognize.py',
+                 name='plate_recognizer', output='screen',
+                 parameters=[{'use_sim_time': True}], condition=IfCondition(enable_camera)),
             # ======================================
         ]),
         LogInfo(msg='[操作] 手动路线：source install/local_setup.bash；ros2 run my_robot navigate_traffic_lights.py --ros-args -p use_sim_time:=true',
@@ -65,4 +68,3 @@ def generate_launch_description():
                 condition=IfCondition(auto_route)),
         LogInfo(msg='[查看] ros2 topic echo /amcl_pose --once；ros2 action list；RViz Fixed Frame=map'),
     ])
-

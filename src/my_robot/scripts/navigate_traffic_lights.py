@@ -7,7 +7,10 @@ Stop in front of each of the three cars and confirm its plate before moving on.
 """
 import math
 import os
+import csv
 import xml.etree.ElementTree as ET
+from collections import Counter
+from datetime import datetime
 import cv2
 import numpy as np
 import rclpy
@@ -37,7 +40,7 @@ ROUTE = [
    (' 再次左转向南 ', 1.05, 0.10, -math.pi/ 2),
    (' 通过红绿灯 2', -2.0, 0.10, math.pi),
    (' 西端左转 ', -4.0, 0.10, -math.pi/ 2),
-   (' 南端左转 ', -4.0, -2.50, 0.0),
+   (' 南端车牌前 ', -4.0, -2.50, -math.pi / 2),
    *PLATE_STOPS,
    (' 横穿到东侧右转 ', 3.95, -2.50, 0.0),
    (' 返回起点 ', *START),
@@ -59,10 +62,13 @@ class TrafficLightRoute(Node):
         super().__init__('navigate_traffic_lights')
         self.declare_parameter('start_at', 0)
         self.declare_parameter('speed', 0.18)
+        self.declare_parameter('plate_results_file', os.path.join(
+            os.environ.get('ROS_LOG_DIR', os.getcwd()), 'plate_results.csv'))
         self.index = int(self.get_parameter('start_at').value)
         if not 0 <= self.index < len(ROUTE):
             raise ValueError('start_at must be between 0 and %d' % (len(ROUTE) - 1))
         self.speed = float(self.get_parameter('speed').value)
+        self.plate_results_file = str(self.get_parameter('plate_results_file').value)
         self.pose = None
         self.pose_time = None
         self.scan = None
@@ -86,12 +92,16 @@ class TrafficLightRoute(Node):
             self.plate_callback,
             10
         )
+        self.create_subscription(String, '/plate_text', self.plate_text_callback, 10)
         self.plate_conf_threshold = 0.3
         self.park_duration = 3.0
+        self.plate_read_timeout = 10.0
         self.plate_detected = False
         self.park_start_time = 0.0
         self.plate_cont = 0
         self.plate_need_frames = 3
+        self.plate_votes = Counter()
+        self.plate_facing_index = None
         # ========================================
         self.pub = self.create_publisher(Twist, '/cmd_vel_nav', 10)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.on_pose, 10)
@@ -117,7 +127,8 @@ class TrafficLightRoute(Node):
         distance = math.hypot(self.pose.position.x - target_x,
                               self.pose.position.y - target_y)
         yaw_err = abs(angle_diff(yaw_of(self.pose.orientation), target_yaw))
-        if distance >= PLATE_POSITION_TOL or yaw_err >= PLATE_YAW_TOL:
+        yaw_limit = 0.35 if self.plate_facing_index == self.index else PLATE_YAW_TOL
+        if distance >= PLATE_POSITION_TOL or yaw_err >= yaw_limit:
             self.plate_cont = 0
             return
         if len(msg.data) != 5:
@@ -141,8 +152,32 @@ class TrafficLightRoute(Node):
                 self.plate_detected = True
                 self.park_start_time = self.get_clock().now().nanoseconds
                 self.plate_cont = 0
+                self.plate_votes.clear()
         else:
             self.plate_cont = 0
+
+    def plate_text_callback(self, msg: String):
+        observation_time = (self.get_clock().now().nanoseconds - self.park_start_time) / 1e9
+        if (self.plate_detected and self.index in PLATE_ROUTE_INDICES
+                and observation_time >= 0.5):
+            self.plate_votes[msg.data] += 1
+
+    def save_plate_result(self, plate_number, text, status, votes):
+        try:
+            output_dir = os.path.dirname(os.path.abspath(self.plate_results_file))
+            os.makedirs(output_dir, exist_ok=True)
+            needs_header = not os.path.exists(self.plate_results_file) or os.path.getsize(self.plate_results_file) == 0
+            _, x, y, _ = ROUTE[self.index]
+            with open(self.plate_results_file, 'a', encoding='utf-8', newline='') as output:
+                writer = csv.writer(output)
+                if needs_header:
+                    writer.writerow(('time', 'station', 'x', 'y', 'plate_text', 'status', 'votes'))
+                writer.writerow((datetime.now().astimezone().isoformat(timespec='seconds'),
+                                 plate_number, x, y, text, status, votes))
+            return True
+        except OSError as exc:
+            self.get_logger().error(f'保存车牌结果失败：{exc}', throttle_duration_sec=5.0)
+            return False
 
     def leg(self):
         start = START if self.index == 0 else ROUTE[self.index - 1][1:4]
@@ -408,9 +443,20 @@ class TrafficLightRoute(Node):
             if elapsed < self.park_duration:
                 return
             plate_number = PLATE_ROUTE_INDICES.index(self.index) + 1
-            self.get_logger().info(f"第 {plate_number}/{PLATE_TOTAL_NUM} 块车牌观察完成，继续导航")
+            plate_text, votes = self.plate_votes.most_common(1)[0] if self.plate_votes else ('', 0)
+            if votes < 2 and elapsed < self.plate_read_timeout:
+                self.get_logger().warn(f'第 {plate_number} 块车牌文字仍未确认，继续观察',
+                                       throttle_duration_sec=3.0)
+                return
+            status = 'confirmed' if votes >= 2 else ('unverified' if votes else 'unreadable')
+            if not self.save_plate_result(plate_number, plate_text, status, votes):
+                return
+            self.get_logger().info(f'第 {plate_number}/{PLATE_TOTAL_NUM} 块车牌：'
+                                   f'{plate_text or "未读出"}（{status}），已保存，继续导航')
             self.plate_detected = False
             self.plate_cont = 0
+            self.plate_votes.clear()
+            self.plate_facing_index = None
             self.index += 1
             self.path = []
             return
@@ -446,8 +492,15 @@ class TrafficLightRoute(Node):
         # =========航点到达判定，距离0.20，旋转增益降低，消除来回摇摆=========
         if distance_to_goal < 0.20:
             self.stop()
+            if self.index in PLATE_ROUTE_INDICES and self.plate_facing_index == self.index:
+                if abs(angle_diff(gyaw, heading)) < 0.40:
+                    self.get_logger().info('已正对：%s，等待连续检测确认' % name,
+                                           throttle_duration_sec=3.0)
+                    return
+                self.plate_facing_index = None
             if abs(angle_diff(gyaw, heading)) < 0.22:
                 if self.index in PLATE_ROUTE_INDICES:
+                    self.plate_facing_index = self.index
                     self.get_logger().info('已正对：%s，等待连续检测确认' % name,
                                            throttle_duration_sec=3.0)
                     return
