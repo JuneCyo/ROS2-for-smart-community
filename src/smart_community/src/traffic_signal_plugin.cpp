@@ -30,7 +30,7 @@ public:
     visual_pub_ = gz_node_->Advertise<msgs::Visual>("~/visual");
     update_connection_ = event::Events::ConnectWorldUpdateBegin(
       std::bind(&TrafficSignalPlugin::OnUpdate, this));
-    RCLCPP_INFO(ros_node_->get_logger(), "Gazebo Classic 红绿灯已启动：红 5 秒、黄 2 秒、绿 5 秒");
+    RCLCPP_INFO(ros_node_->get_logger(), "Gazebo Classic 红绿灯已启动：红 10 秒、黄 5 秒、绿 10 秒");
   }
 
 private:
@@ -39,8 +39,8 @@ private:
     const double now = world_->SimTime().Double();
     if (now - last_update_ < 0.5) return;
     last_update_ = now;
-    const double phase = std::fmod(now, 12.0);
-    const int state = phase < 5.0 ? 0 : (phase < 7.0 ? 1 : 2);
+    const double phase = std::fmod(now, 25.0);
+    const int state = phase < 10.0 ? 0 : (phase < 15.0 ? 1 : 2);
     static const std::array<std::string, 3> names{{"red", "yellow", "green"}};
     for (int i = 0; i < 2; ++i) {
       auto model = world_->ModelByName("traffic_light" + std::to_string(i + 1));

@@ -17,6 +17,14 @@ LIGHTS = ((4.0, 0.0), (-2.0, 0.25))
 
 def detect_lamp(image, x, y, yaw, light_id):
     """Return a lamp color or unknown using the known housing projection."""
+    # ============新增：世界坐标距离过滤，在这里改阈值============
+    target_x, target_y = LIGHTS[light_id - 1]
+    dist = math.hypot(x - target_x, y - target_y)
+    dist_threshold = 2.3   # 大于这个距离直接不识别
+    if dist > dist_threshold:
+        return 'unknown'
+    # ==========================================================
+    
     height, width = image.shape[:2]
     fx = width / (2.0 * math.tan(0.8))  # sensor horizontal FOV = 1.6 rad
     dx, dy = LIGHTS[light_id - 1][0] - x, LIGHTS[light_id - 1][1] - y

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """One command: Gazebo robot, AMCL/Nav2 and the two-light route."""
 import os
-
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, SetLaunchConfiguration, TimerAction
@@ -9,7 +8,6 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
 
 def generate_launch_description():
     launch_dir = os.path.join(get_package_share_directory('my_robot'), 'launch')
@@ -20,6 +18,7 @@ def generate_launch_description():
     lite_nav = LaunchConfiguration('lite_nav')
     enable_camera = LaunchConfiguration('enable_camera')
     map_file = LaunchConfiguration('map')
+
     return LaunchDescription([
         DeclareLaunchArgument('gui', default_value='true'),
         DeclareLaunchArgument('rviz', default_value='true'),
@@ -54,6 +53,11 @@ def generate_launch_description():
             Node(package='my_robot', executable='traffic_light_vision.py',
                  name='traffic_light_vision', output='screen',
                  parameters=[{'use_sim_time': True}], condition=IfCondition(auto_route)),
+            # ========== 新增车牌识别节点 ==========
+            Node(package='my_robot', executable='plate_detect_cn.py',
+                 name='plate_detect_cn', output='screen',
+                 parameters=[{'use_sim_time': True}]),
+            # ======================================
         ]),
         LogInfo(msg='[操作] 手动路线：source install/local_setup.bash；ros2 run my_robot navigate_traffic_lights.py --ros-args -p use_sim_time:=true',
                 condition=UnlessCondition(auto_route)),
@@ -61,3 +65,4 @@ def generate_launch_description():
                 condition=IfCondition(auto_route)),
         LogInfo(msg='[查看] ros2 topic echo /amcl_pose --once；ros2 action list；RViz Fixed Frame=map'),
     ])
+

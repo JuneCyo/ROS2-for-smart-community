@@ -1,0 +1,8 @@
+# The checkpoint in models/plate_detect.pt was saved with Ultralytics 8.3.144.
+# Keep NumPy on the 1.x ABI for the ROS cv_bridge and PyTorch wheels.
+numpy==1.26.4
+scipy==1.11.4
+opencv-python==4.8.1.78
+torch==2.2.2+cpu
+torchvision==0.17.2+cpu
+ultralytics==8.3.144
