@@ -42,6 +42,7 @@ class PlateDetectCNNode(Node):
         # 默认全0，代表无车牌
         detect_msg.data = [0.0,0.0,0.0,0.0,0.0]
         img_h, img_w = frame.shape[:2]
+        nearest_center = img_w * 0.25
 
         results = self.model(frame, conf=0.3)
         for res in results:
@@ -58,8 +59,11 @@ class PlateDetectCNNode(Node):
                 cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
                 cv2.putText(frame,f"plate {conf:.2f}",(x1,y1-5),
                             cv2.FONT_HERSHEY_SIMPLEX,0.6,(0,255,0),2)
-                # 更新检测框（仍然只保留一个，和你原来逻辑保持一致）
-                detect_msg.data = [float(x1),float(y1),float(x2),float(y2),conf]
+                # 同一画面可见三辆车时，只发布画面中心那辆车的车牌框。
+                center_offset = abs((x1 + x2) / 2 - img_w / 2)
+                if center_offset < nearest_center:
+                    nearest_center = center_offset
+                    detect_msg.data = [float(x1),float(y1),float(x2),float(y2),conf]
 
         self.plate_pub.publish(detect_msg)
 
@@ -79,4 +83,3 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
-

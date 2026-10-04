@@ -1,7 +1,7 @@
 cd ~/ros2_ws
-rm -rf build install log
 source /opt/ros/humble/setup.bash
-colcon build --packages-select smart_community my_robot
 source install/local_setup.bash
 source .venv-plate/bin/activate
+export ROS_LOG_DIR="$PWD/log/ros"
+mkdir -p "$ROS_LOG_DIR"
 ros2 launch my_robot bringup_navigation.launch.py

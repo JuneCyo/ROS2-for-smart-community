@@ -7,13 +7,14 @@
 
 ## 0. 定位导航：依次通过两个红绿灯
 
-当前 `competition_world.sdf` 中，红绿灯 1 的通道中心在 `(4.0, 0.0)`，通道沿南北方向；红绿灯 2 的通道中心在 `(-2.0, 0.25)`，通道沿东西方向。闭环路线从 `(3.95, -4.0)` 朝北直行穿过第一个灯，到北端左转向西，再左转向南，在 `(1.05, 0.10)` 右转向西穿过第二个灯；到西端左转向南，在车牌前横向白线北侧的 `(-4.0, -2.90)` 左转，沿横向通道到东端 `(3.95, -2.90)` 右转返回起点，不经过车牌前白线。导航逐段读取 AMCL 位姿并调用 Nav2 `ComputePathToPose` 检查通路，沿指定车道中心行驶，避免规划器抄近路压线。场地原贴图把起点方框和车道完全封闭，`competition_world.sdf` 在其余必经白线上设有窄黑色通道；车牌前横向白线保持原样。这些通道只有视觉效果，不改变激光碰撞地图。
+当前 `competition_world.sdf` 中，红绿灯 1 的通道中心在 `(4.0, 0.0)`，通道沿南北方向；红绿灯 2 的通道中心在 `(-2.0, 0.25)`，通道沿东西方向。闭环路线从 `(3.95, -4.0)` 朝北直行穿过第一个灯，到北端左转向西，再左转向南，在 `(1.05, 0.10)` 右转向西穿过第二个灯；到西端左转向南，沿车牌前横向白线北侧的车道，依次在 `(-4.0, -2.50)`、`(-2.6, -2.50)`、`(-1.2, -2.50)` 朝南正对三辆车。每处连续检测到车牌后停车观察 3 秒，再前往下一处；三块均确认后横穿到东端，右转返回起点，不经过车牌前白线。此流程只检测车牌位置，不识别文字。导航逐段读取 AMCL 位姿并调用 Nav2 `ComputePathToPose` 检查通路，沿指定车道中心行驶，避免规划器抄近路压线。场地原贴图把起点方框和车道完全封闭，`competition_world.sdf` 在其余必经白线上设有窄黑色通道；车牌前横向白线保持原样。这些通道只有视觉效果，不改变激光碰撞地图。
 
 ```bash
 cd ~/ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select smart_community my_robot
 source install/local_setup.bash
+source .venv-plate/bin/activate
 ros2 launch my_robot bringup_navigation.launch.py
 ```
 
@@ -27,7 +28,7 @@ ros2 launch my_robot bringup_navigation.launch.py
 |---|---|---|
 | 1 | Gazebo、`traffic_signal_plugin`、`robot_state_publisher`、`spawn_entity` | `/clock`、`/scan`、`/camera/image_raw`、`/odom`、两个灯的 `/traffic_light/lightN/state` |
 | 2 | `map_server`、`amcl`、`amcl_tf_bridge`、Nav2 `planner_server`、`velocity_smoother`、`map_obstacles_cloud`、RViz | `/map`、`/map_obstacles`、`/amcl_pose`、`map→odom`、`/compute_path_to_pose` |
-| 3 | `traffic_light_vision.py`、`navigate_traffic_lights.py` | 图像识别发布 `/traffic_light/lightN/vision_state`；红黄灯停车、绿灯通行，激光发现障碍后在车道内绕行或停车；完成 11 个航点返回起点 |
+| 3 | `traffic_light_vision.py`、`plate_detect_cn.py`、`navigate_traffic_lights.py` | 红黄灯停车、绿灯通行；依次正对三辆车检测车牌，每处确认后才继续；完成 14 个航点返回起点 |
 
 虚拟机省资源时用 `gui:=false rviz:=false`。只启动定位导航、不自动跑路时用 `auto_route:=false`；确认 `/amcl_pose` 后，在新终端运行：
 
@@ -50,7 +51,7 @@ ros2 run my_robot navigate_traffic_lights.py --ros-args -p use_sim_time:=true
 
 `amcl_tf_bridge` 先用配置中的初始位姿和 `/odom` 发布 `map→odom`，收到 `/amcl_pose` 后改用 AMCL 定位位姿持续刷新；这样启动时即使 AMCL 首次发布较早，也不会卡在等待 TF。当前 Humble 仿真中 AMCL 自带 TF 广播会在行驶中停止刷新，导致 Nav2 报 `Transform data too old`。配置中已关闭 AMCL 自带广播，避免同一 TF 出现两个发布者。
 
-路线脚本的 `start_at` 参数可从指定航点恢复，取值 `0..10`，默认 `0`；仅在车已位于对应路段时使用。`speed` 默认 `0.18` m/s。每段有 Nav2 通路检查和车道偏离检查；激光在前方约 1.25 m 发现地图中没有的障碍时，先检查两侧是否有足够空间，再在路线中心左右最多约 0.38 m 内绕行；两侧不安全或距离小于 0.32 m 时停车，障碍移走后继续。绕行候选轨迹还会查询地面贴图的白线位置和场景里的黑色通行缺口，要求车体外缘与白线至少留约 0.03 m；无法满足就停车，因此不会为躲障碍去压车牌前白线。红绿灯插件在 Gazebo Classic 中按红 5 秒、黄 2 秒、绿 5 秒切换外观和状态话题；相机节点按灯架几何位置裁剪图像识别灯色。路线在灯前同时参考图像与仿真状态，冲突时停车，图像暂时看不见灯时使用状态话题。2026-10-01 双窗口配置测试完成 11/11 个航点并返回起点，两个红灯前均出现停车等待日志；在北向直线路段临时放入半径 0.07 m 的障碍后，记录到向左绕行并最终完成 11/11 航点。障碍突然出现在车前约 0.4 m 时，小车停车，移走障碍后继续。2026-09-30 无相机轻量配置的 `/clock` 实时率约 0.97、RViz 状态栏约 44 FPS；启用相机和灯色识别后负载会提高，实际数值随宿主机变化。
+路线脚本的 `start_at` 参数可从指定航点恢复，取值 `0..13`，默认 `0`；仅在车已位于对应路段时使用。`speed` 默认 `0.18` m/s。每段有 Nav2 通路检查和车道偏离检查；激光在前方约 1.25 m 发现地图中没有的障碍时，先检查两侧是否有足够空间，再在路线中心左右最多约 0.38 m 内绕行；两侧不安全或距离小于 0.32 m 时停车，障碍移走后继续。绕行候选轨迹还会查询地面贴图的白线位置和场景里的黑色通行缺口，要求车体外缘与白线至少留约 0.03 m；无法满足就停车，因此不会为躲障碍去压车牌前白线。红绿灯插件在 Gazebo Classic 中按红 5 秒、黄 2 秒、绿 5 秒切换外观和状态话题；相机节点按灯架几何位置裁剪图像识别灯色。路线在灯前同时参考图像与仿真状态，冲突时停车，图像暂时看不见灯时使用状态话题。2026-10-01 双窗口配置测试完成 11/11 个航点并返回起点，两个红灯前均出现停车等待日志；在北向直线路段临时放入半径 0.07 m 的障碍后，记录到向左绕行并最终完成 11/11 航点。障碍突然出现在车前约 0.4 m 时，小车停车，移走障碍后继续。2026-09-30 无相机轻量配置的 `/clock` 实时率约 0.97、RViz 状态栏约 44 FPS；启用相机和灯色识别后负载会提高，实际数值随宿主机变化。
 
 定位与导航自检：
 
@@ -468,4 +469,3 @@ ros2 run my_robot survey_driver.py --ros-args -p speed:=0.3 -p loops:=2 -p route
 > 所以地图相对世界坐标整体转了 90°（RViz 里看很正常，只是和世界坐标不对齐）。
 > 想让地图和世界坐标一致：把起始 yaw 设成 0 再建图
 > （`ros2 launch my_robot gazebo.launch.py yaw:=0`）。
-

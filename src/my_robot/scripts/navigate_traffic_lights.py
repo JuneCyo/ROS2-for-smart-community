@@ -3,7 +3,7 @@
 Nav2 plans each leg from the live AMCL pose. A small pure-pursuit controller
 tracks that plan on /cmd_vel because this Gazebo/Humble Nav2 controller can
 continue driving after its internal TF cache stops updating.
-Now support THREE plate detect at ONE station.
+Stop in front of each of the three cars and confirm its plate before moving on.
 """
 import math
 import os
@@ -23,6 +23,11 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String, Float32MultiArray
 
 START = (3.95, -4.0, math.pi / 2)
+PLATE_STOPS = [
+    ('车牌识别 1/3', -4.0, -2.50, -math.pi / 2),  # Car3
+    ('车牌识别 2/3', -2.6, -2.50, -math.pi / 2),  # Car2
+    ('车牌识别 3/3', -1.2, -2.50, -math.pi / 2),  # Car1
+]
 ROUTE = [
    (' 起步直行 ', 3.95, -2.65, math.pi/ 2),
    (' 红绿灯 1 南侧 ', 3.95, -0.85, math.pi/ 2),
@@ -33,18 +38,15 @@ ROUTE = [
    (' 通过红绿灯 2', -2.0, 0.10, math.pi),
    (' 西端左转 ', -4.0, 0.10, -math.pi/ 2),
    (' 南端左转 ', -4.0, -2.50, 0.0),
-   (' 车牌识别 ', -2.9, -2.50, -math.pi / 2),
+   *PLATE_STOPS,
    (' 横穿到东侧右转 ', 3.95, -2.50, 0.0),
    (' 返回起点 ', *START),
 ]
-# ===================== 单点识别区域（一次性识别3个车牌） =====================
-PLATE_POINTS = [
-    {"x": -5.0, "y": -2.90, "trigger_r":2, "unlock_r":1.5},
-]
-PLATE_TARGET_YAW = -math.pi / 2
-YAW_TOL = 0.30
-PLATE_TOTAL_NUM = 3
-# ==============================================================
+PLATE_ROUTE_INDICES = tuple(i for i, waypoint in enumerate(ROUTE)
+                            if waypoint in PLATE_STOPS)
+PLATE_TOTAL_NUM = len(PLATE_STOPS)
+PLATE_POSITION_TOL = 0.20
+PLATE_YAW_TOL = 0.22
 def angle_diff(a, b):
     return math.atan2(math.sin(a - b), math.cos(a - b))
 
@@ -88,10 +90,8 @@ class TrafficLightRoute(Node):
         self.park_duration = 3.0
         self.plate_detected = False
         self.park_start_time = 0.0
-        self.detected_plates = set()
-        self.plate_locks = [False]*len(PLATE_POINTS)
         self.plate_cont = 0
-        self.plate_need_frames = 2
+        self.plate_need_frames = 3
         # ========================================
         self.pub = self.create_publisher(Twist, '/cmd_vel_nav', 10)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.on_pose, 10)
@@ -111,56 +111,38 @@ class TrafficLightRoute(Node):
         self.get_logger().info('等待 AMCL、/scan 和 Nav2 路径规划器；路线共 %d 个航点' % len(ROUTE))
 
     def plate_callback(self, msg: Float32MultiArray):
-        if self.pose is None:
+        if self.pose is None or self.plate_detected or self.index not in PLATE_ROUTE_INDICES:
             return
-        current_waypoint_name = ROUTE[self.index][0]
-        if "车牌识别" not in current_waypoint_name:
-            return
-        robot_x = self.pose.position.x
-        robot_y = self.pose.position.y
-        robot_yaw = yaw_of(self.pose.orientation)
-        yaw_err = abs(angle_diff(robot_yaw, PLATE_TARGET_YAW))
-        if yaw_err > YAW_TOL:
+        _, target_x, target_y, target_yaw = ROUTE[self.index]
+        distance = math.hypot(self.pose.position.x - target_x,
+                              self.pose.position.y - target_y)
+        yaw_err = abs(angle_diff(yaw_of(self.pose.orientation), target_yaw))
+        if distance >= PLATE_POSITION_TOL or yaw_err >= PLATE_YAW_TOL:
             self.plate_cont = 0
             return
-        active_plate_id = -1
-        for pid, plate in enumerate(PLATE_POINTS):
-            dist = math.hypot(robot_x - plate["x"], robot_y - plate["y"])
-            if dist < plate["trigger_r"] and not self.plate_locks[pid]:
-                active_plate_id = pid
-                break
-        if active_plate_id == -1:
+        if len(msg.data) != 5:
             self.plate_cont = 0
-            return
-        if self.plate_detected:
             return
         x1, y1, x2, y2, conf = msg.data
         w = x2 - x1
         h = y2 - y1
-        if h <= 0:
+        if w <= 0 or h <= 0:
             self.plate_cont = 0
             return
         ratio = w / h
-        if ratio <1.5 or ratio>7.0:
+        if ratio < 1.5 or ratio > 7.0:
             self.plate_cont = 0
             return
         if conf > self.plate_conf_threshold:
-            self.plate_cont +=1
-            self.get_logger().info(f"检测车牌，当前连续帧计数：{self.plate_cont}")
+            self.plate_cont += 1
             if self.plate_cont >= self.plate_need_frames:
-                # 利用检测框坐标生成唯一标识，区分三块车牌
-                plate_key = f"plate_{round(x1,1)}_{round(y1,1)}"
-                self.detected_plates.add(plate_key)
-                self.get_logger().info(f"识别车牌key:{plate_key}，已收集数量：{len(self.detected_plates)}/{PLATE_TOTAL_NUM}")
-                if len(self.detected_plates) >= PLATE_TOTAL_NUM:
-                    plate = PLATE_POINTS[active_plate_id]
-                    dist = math.hypot(robot_x - plate["x"], robot_y - plate["y"])
-                    self.get_logger().info(f"====全部3块车牌识别完成，距离:{dist:.2f},yaw误差:{yaw_err:.3f}====")
-                    self.plate_detected = True
-                    self.park_start_time = self.get_clock().now().seconds_nanoseconds()[0]
-                    self.plate_cont = 0
+                plate_number = PLATE_ROUTE_INDICES.index(self.index) + 1
+                self.get_logger().info(f"第 {plate_number}/{PLATE_TOTAL_NUM} 块车牌检测确认，停车观察")
+                self.plate_detected = True
+                self.park_start_time = self.get_clock().now().nanoseconds
+                self.plate_cont = 0
         else:
-            self.plate_cont =0
+            self.plate_cont = 0
 
     def leg(self):
         start = START if self.index == 0 else ROUTE[self.index - 1][1:4]
@@ -419,34 +401,19 @@ class TrafficLightRoute(Node):
             self.get_logger().warn('规划重试 %d/2：%s' % (self.plan_tries, reason))
 
     def tick(self):
-        # =================【最高优先级：车牌打卡逻辑，触发打卡直接return，不再跑导航】=================
+        # 每个车牌停靠点独立确认；未确认前不能切换到下一航点。
         if self.plate_detected:
-            now = self.get_clock().now().seconds_nanoseconds()[0]
-            elapsed = now - self.park_start_time
-            twist_cmd = Twist()
-            twist_cmd.linear.x = 0.0
-            twist_cmd.angular.z = 0.0
-            self.pub.publish(twist_cmd)
+            elapsed = (self.get_clock().now().nanoseconds - self.park_start_time) / 1e9
+            self.stop()
             if elapsed < self.park_duration:
-                self.get_logger().info(f"====车牌打卡倒计时，剩余 {self.park_duration-elapsed:.1f} s====")
                 return
-            else:
-                self.plate_locks[0] = True
-                self.plate_detected = False
-                self.detected_plates.clear()
-                self.get_logger().info(f"====3秒车牌打卡完成，继续导航====")
-
-        # 离开识别区解锁
-        if self.pose is not None:
-            robot_x = self.pose.position.x
-            robot_y = self.pose.position.y
-            for pid, plate in enumerate(PLATE_POINTS):
-                if self.plate_locks[pid]:
-                    dist = math.hypot(robot_x - plate["x"], robot_y - plate["y"])
-                    if dist > plate["unlock_r"]:
-                        self.plate_locks[pid] = False
-                        self.detected_plates.clear()
-                        self.get_logger().info(f"离开车牌识别区域，解锁识别，距离:{dist:.2f}")
+            plate_number = PLATE_ROUTE_INDICES.index(self.index) + 1
+            self.get_logger().info(f"第 {plate_number}/{PLATE_TOTAL_NUM} 块车牌观察完成，继续导航")
+            self.plate_detected = False
+            self.plate_cont = 0
+            self.index += 1
+            self.path = []
+            return
 
         if self.finished:
             self.stop()
@@ -465,13 +432,6 @@ class TrafficLightRoute(Node):
             self.stop()
             self.get_logger().warn('激光扫描超过 1 秒未更新，已停车等待', throttle_duration_sec=5.0)
             return
-        if not self.path:
-            self.stop()
-            if not self.planner.server_is_ready():
-                self.get_logger().warn('导航等待 Nav2 路径规划器启动',
-                                       throttle_duration_sec=8.0)
-            self.request_plan()
-            return
         x, y = self.pose.position.x, self.pose.position.y
         heading = yaw_of(self.pose.orientation)
         name, gx, gy, gyaw = ROUTE[self.index]
@@ -487,6 +447,10 @@ class TrafficLightRoute(Node):
         if distance_to_goal < 0.20:
             self.stop()
             if abs(angle_diff(gyaw, heading)) < 0.22:
+                if self.index in PLATE_ROUTE_INDICES:
+                    self.get_logger().info('已正对：%s，等待连续检测确认' % name,
+                                           throttle_duration_sec=3.0)
+                    return
                 self.get_logger().info('已到达：%s' % name)
                 self.index += 1
                 self.path = []
@@ -499,6 +463,13 @@ class TrafficLightRoute(Node):
             # 降低旋转增益，解决原地大幅度左右摆动
             command.angular.z = max(-0.8, min(0.8, 0.8 * angle_diff(gyaw, heading)))
             self.pub.publish(command)
+            return
+        if not self.path:
+            self.stop()
+            if not self.planner.server_is_ready():
+                self.get_logger().warn('导航等待 Nav2 路径规划器启动',
+                                       throttle_duration_sec=8.0)
+            self.request_plan()
             return
         sx, sy, _, _ = self.leg()
         dx, dy = gx - sx, gy - sy
@@ -547,4 +518,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
