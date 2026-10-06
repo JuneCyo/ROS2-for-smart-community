@@ -94,66 +94,7 @@ source install/setup.bash
 
 ---
 
-## 0.1 两条基础命令
-
-```bash
-cd ~/ros2_ws
-colcon build --packages-select my_robot
-source install/setup.bash
-
-# ① 一键仿真：Gazebo 竞赛场地 + 机器人（生成在白线方框内）+ 可选 RViz
-ros2 launch my_robot gazebo.launch.py
-
-# ② 只看模型（不开 Gazebo，纯 URDF 检查，带关节滑条）
-ros2 launch my_robot display.launch.py
-```
-
-Gazebo 里机器人应该出现在**地面白色方框内**：
-
-```
-白线方框范围:  x ∈ [3.26, 4.73] ,  y ∈ [-4.75, -3.33]      (方框中心 ≈ (4.0, -4.0))
-默认生成位姿:  x = 3.95 , y = -4.00 , z = 0.06 , yaw = 1.5708(朝北, 面向场地里面)
-```
-
-> 注意：**x=3.0 其实在方框左边线上（方框左边界 x=3.26）**，车体（0.30 m 长）
-> 若放在 x=3.0 会压在/越过白线。默认取 `x=3.95`（方框中心）保证整台车都在白线内；
-> 若确实要放在 x=3.0：`ros2 launch my_robot gazebo.launch.py x:=3.0 y:=-4.0`
-> 起始位姿全部是启动参数，`world/x/y/z/yaw` 都可以在命令行覆盖。
-
----
-
-## 0.2 全部启动命令（速查）
-
-```bash
-cd ~/ros2_ws
-colcon build                     # 或 colcon build --packages-select my_robot smart_community
-source install/setup.bash
-
-# ① 仿真：场地 + 机器人（白线方框里，朝北）
-ros2 launch my_robot gazebo.launch.py
-# ①' 想同时看 RViz（红色激光 + 相机图像 + 机器人模型）
-ros2 launch my_robot gazebo.launch.py rviz:=true
-# ①'' 无界面（省 CPU，建图/跑脚本时用）
-ros2 launch my_robot gazebo.launch.py gui:=false
-
-# ② 键盘遥控
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-
-# ③ 只看机器人模型（不开 Gazebo）
-ros2 launch my_robot display.launch.py
-
-# ④ Cartographer 全场景建图（终端 2）
-ros2 launch my_robot cartographer.launch.py rviz:=true
-# ④' 自动跑遍全场（终端 3），也可以换成上面②的键盘遥控
-ros2 run my_robot survey_driver.py
-# ④'' 存图（终端 4）→ ~/ros2_ws/maps/smart_community_map.{pbstream,pgm,yaml,png}
-bash $(ros2 pkg prefix my_robot)/share/my_robot/tools/save_cartographer_map.sh
-
-# ⑤ 事后在 RViz 里看已经建好的地图
-ros2 launch my_robot view_map.launch.py
-#    (默认读 ~/ros2_ws/maps/smart_community_map.pbstream；
-#     也可 ros2 launch my_robot view_map.launch.py map_yaml:=$HOME/ros2_ws/maps/smart_community_map.yaml)
-```
+单独查看模型时运行 `ros2 launch my_robot display.launch.py`。建图和地图回看命令见第 9 节。
 
 ---
 
@@ -236,7 +177,7 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard   # 键盘遥控（i/j/k/l�
 | `world` | `smart_community/share/smart_community/worlds/competition_world.sdf` | 场地文件（取不到包时回退到 `empty.world`） |
 | `x` / `y` | `3.95` / `-4.00` | 起始位置（白线方框中心） |
 | `z` | `0.06` | 起始高度（地面 box 顶面 z=0.05，留 1 cm 余量轻轻落地） |
-| `yaw` | `0.0` | 起始朝向（rad） |
+| `yaw` | `1.5708` | 起始朝向（rad，朝北） |
 | `gui` | `true` | 是否开 Gazebo 客户端；`gui:=false` 为无头模式 |
 | `rviz` | `false` | 是否同时开 RViz2 |
 | `spawn_delay` | `8.0` | 等 Gazebo 加载完再生成实体（机器慢就调大） |
@@ -345,28 +286,9 @@ smart_community/
     └── model.sdf / model.config / materials/{label_*.png, trash_bins.material}
 ```
 
-### 8.1 平面图 → 场地坐标的换算
+### 8.1 当前摆放位置
 
-平面图(以及地面贴图 map1.jpg)的外墙框：**列 7..625、行 12..629 == 场地 x,y ∈ [-5,+5]**，
-并且**图片上方 = y 负方向(南)**，所以
-
-```
-x = -5 + (col - 7) * 10/618
-y = -5 + (row - 12) * 10/617
-```
-
-用两个斑马线 + 起点区白框交叉校对过（误差 < 0.3 m）。据此量出的位置：
-
-| 对象 | 平面图位置 | 世界坐标 | 尺寸(m) |
-|---|---|---|---|
-| 楼宇A | 楼名标签中心 | (1.18, **-1.44**) | 1.30 × 0.85 × 1.10 |
-| 楼宇B | 楼名标签中心 | (1.18, **-0.28**) | 1.30 × 0.85 × 1.10 |
-| 楼宇C | 楼名标签中心 | (1.18, **0.95**) | 1.30 × 0.85 × 1.10 |
-| 垃圾桶(4 个) | 楼宇C 北侧一排 | x = **1.07**, y = **1.75 / 2.23 / 2.71 / 3.19** | 每个 0.62 × 0.46 × 0.92 |
-
-### 8.1.1 实际摆放位置（按用户要求改过两版，以现在为准）
-
-用户最终要求：**「从西往东依次坐落，放在东西方向那两条长白线之间」**，标签/招牌**朝北**。
+楼宇和垃圾桶从西往东排列在两条东西向白线之间，标签和招牌朝北。
 这两条长白线是 **y = -3.31**（x -3.37..1.88）和 **y = -1.89**（x -3.37..0.46）之间的走廊
 （高 1.42 m，西端是竖白线 x≈-3.34，东端到停车列白线 x=3.28）——
 正好在小车起点 (3.95, -4, 朝北) 的**左前方**、红绿灯西边、停车位对面。
