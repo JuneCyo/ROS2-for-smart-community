@@ -49,8 +49,7 @@ class PersonCounter(Node):
         self.get_logger().info('人偶立牌人数识别已启动；等待路线停靠 A、B 立牌')
 
     def image_callback(self, msg):
-        # Keep only the newest camera message; image conversion is needed only
-        # at a board stop, not for every frame during the whole route.
+        # Convert the latest frame only when the route requests a count.
         self.latest_image_msg = msg
         self.latest_image_ns = self.get_clock().now().nanoseconds
 

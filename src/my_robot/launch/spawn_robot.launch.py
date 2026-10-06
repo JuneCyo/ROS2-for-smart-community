@@ -1,15 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-往"已经跑起来的" Gazebo 里生成 my_robot (不再启动 Gazebo)
-=========================================================
-前提: 当前 Gazebo 必须加载了 gazebo_ros 的 factory 插件
-      (即启动 gzserver 时带了 -s libgazebo_ros_factory.so,
-       或直接用 ros2 launch gazebo_ros gazebo.launch.py / my_robot gazebo.launch.py)
-
-    ros2 launch my_robot spawn_robot.launch.py
-    ros2 launch my_robot spawn_robot.launch.py x:=3.0 y:=-4.0
-"""
+"""把机器人加入已启动且加载了 gazebo_ros_factory 插件的 Gazebo。"""
 import os
 
 from ament_index_python.packages import get_package_share_directory

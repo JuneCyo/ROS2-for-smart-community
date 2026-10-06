@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""AMCL-localized closed route through both traffic-light openings.
-Nav2 plans each leg from the live AMCL pose. A small pure-pursuit controller
-tracks that plan on /cmd_vel because this Gazebo/Humble Nav2 controller can
-continue driving after its internal TF cache stops updating.
-Count people on both boards, then read the three car plates at their stops.
+"""Follow the two-light route and record both standee counts and three plates.
+
+Nav2 checks each leg; local /cmd_vel control continues through brief AMCL TF gaps.
 """
 import math
 import os
@@ -104,7 +102,6 @@ class TrafficLightRoute(Node):
         self.next_plan_time_ns = 0
         self.finished = False
         self.exit_code = 1
-        # 车牌和人偶立牌的停靠识别状态
         self.plate_sub = self.create_subscription(
             Float32MultiArray,
             '/plate_detect',
@@ -564,7 +561,7 @@ class TrafficLightRoute(Node):
             self.get_logger().warn('规划重试 %d/2：%s' % (self.plan_tries, reason))
 
     def tick(self):
-        # 每个车牌停靠点独立确认；未确认前不能切换到下一航点。
+        # 车牌文字完成投票或超时后再离开当前停靠点。
         if self.plate_detected:
             elapsed = (self.get_clock().now().nanoseconds - self.park_start_time) / 1e9
             self.stop()
@@ -621,7 +618,7 @@ class TrafficLightRoute(Node):
                                    (light_id, self.light_state(light_id - 1)),
                                    throttle_duration_sec=2.0)
             return
-        # =========航点到达判定，距离0.20，旋转增益降低，消除来回摇摆=========
+        # 距航点不足 0.20 m 时原地对准目标朝向。
         if distance_to_goal < 0.20:
             self.stop()
             if self.index in PERSON_ROUTE_INDICES and self.person_station_index == self.index:
@@ -655,7 +652,7 @@ class TrafficLightRoute(Node):
                     self.finished = True
                 return
             command = Twist()
-            # 降低旋转增益，解决原地大幅度左右摆动
+            # 降低转向增益，避免在目标角度附近来回摆动。
             command.angular.z = max(-0.8, min(0.8, 0.8 * angle_diff(gyaw, heading)))
             self.pub.publish(command)
             return

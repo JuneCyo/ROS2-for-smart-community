@@ -18,7 +18,7 @@ from ultralytics import YOLO
 
 
 WINDOW_NAME = 'cn_plate_view'
-DETECTION_PERIOD = 0.30  # Seconds; keep CPU available for Gazebo and navigation.
+DETECTION_PERIOD = 0.30  # Leave CPU time for Gazebo and navigation.
 
 
 def detect_plates(model, frame):

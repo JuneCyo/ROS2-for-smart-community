@@ -24,7 +24,6 @@ target_link_libraries(traffic_signal_plugin ${GAZEBO_LIBRARIES})
 ament_target_dependencies(traffic_signal_plugin gazebo_ros rclcpp std_msgs)
 install(TARGETS traffic_signal_plugin LIBRARY DESTINATION lib)
 
-# 安装文件夹
 install(DIRECTORY
   launch
   worlds

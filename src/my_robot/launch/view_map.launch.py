@@ -1,16 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-在 RViz 里查看已经存好的地图(不重新建图)
-=========================================
-    ros2 launch my_robot view_map.launch.py
-    ros2 launch my_robot view_map.launch.py map_pbstream:=$HOME/ros2_ws/maps/smart_community_map.pbstream
-
-地图来源二选一:
-  * map_pbstream 不为空 -> 用 cartographer_pbstream_map_publisher 直接读 .pbstream
-  * map_yaml     不为空 -> 用 nav2_bringup 的 map_server 读 .yaml/.pgm
-两者都发布 /map(latched), RViz 用 rviz/cartographer.rviz 显示。
-"""
+"""用 Cartographer pbstream 或 Nav2 YAML 地图启动 RViz 地图查看器。"""
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -37,7 +27,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time', default_value='true'),
     ]
 
-    # map_yaml 非空 -> 走 nav2 map_server; 否则用 pbstream 发布
+    # 提供 map_yaml 时切换到 Nav2 map_server，否则读取 pbstream。
     has_yaml = PythonExpression(["'", LaunchConfiguration('map_yaml'), "' != ''"])
     use_pbstream = IfCondition(PythonExpression(["not (", has_yaml, ")"]))
     use_yaml = IfCondition(has_yaml)

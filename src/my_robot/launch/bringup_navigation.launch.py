@@ -29,8 +29,7 @@ def generate_launch_description():
                               description='开启相机用于红绿灯、立牌人数与车牌识别'),
         DeclareLaunchArgument('map', default_value=os.path.join(
             get_package_share_directory('my_robot'), 'maps', 'competition_nav_map.yaml')),
-        # Included launch files share configuration in Humble. Preserve the
-        # requested RViz value before gazebo.launch.py sets its own to false.
+        # Humble 共享子启动文件的配置；先保存 RViz 参数，避免被 Gazebo 覆盖。
         SetLaunchConfiguration('nav_rviz_enabled', rviz),
         LogInfo(msg='[1/3] Gazebo + robot_state_publisher + spawn_entity: 启动相机、激光和周期切换的两组红绿灯'),
         IncludeLaunchDescription(
@@ -53,7 +52,6 @@ def generate_launch_description():
             Node(package='my_robot', executable='traffic_light_vision.py',
                  name='traffic_light_vision', output='screen',
                  parameters=[{'use_sim_time': True}], condition=IfCondition(auto_route)),
-            # 相机识别节点
             Node(package='my_robot', executable='plate_detect_cn.py',
                  name='plate_detect_cn', output='screen',
                  parameters=[{'use_sim_time': True}]),

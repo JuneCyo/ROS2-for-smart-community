@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-bringup.launch.py 一键启动，无延时
-"""
+"""启动仿真、RViz、Cartographer 和可选的巡航建图节点。"""
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -15,29 +13,25 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg_share = get_package_share_directory('my_robot')
 
-    # 启动参数
     declare_gui = DeclareLaunchArgument('gui', default_value='false')
     declare_auto_survey = DeclareLaunchArgument('auto_survey', default_value='true')
 
-    # 1. Gazebo仿真：rviz直接硬编码true，启动即自动打开RViz
+    # RViz 由 Gazebo 启动文件统一打开，避免重复实例。
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(pkg_share, 'launch', 'gazebo.launch.py')),
         launch_arguments={'gui': LaunchConfiguration('gui'), 'rviz': 'true'}.items()
     )
 
-    # 2. display模块：关掉它自己的RViz，避免双开
     display = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(pkg_share, 'launch', 'display.launch.py')),
         launch_arguments={'rviz': 'false'}.items()
     )
 
-    # 3. Cartographer建图：不用传rviz参数（gazebo已经开了）
     carto = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(pkg_share, 'launch', 'cartographer.launch.py')),
         launch_arguments={'rviz': 'false'}.items()
     )
 
-    # 4. 自动遍历驱动
     survey = Node(
         package='my_robot',
         executable='survey_driver.py',

@@ -29,10 +29,10 @@ amcl:
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     save_pose_rate: 0.5
     sigma_hit: 0.2
-    # amcl_tf_bridge republishes map->odom from /amcl_pose and /odom.
+    # map->odom 由 amcl_tf_bridge 发布。
     tf_broadcast: false
     transform_tolerance: 1.0
-    # Keep map->odom fresh at every scan, including pauses between waypoints.
+    # 每次扫描都更新定位，停车时也能刷新 TF。
     update_min_a: 0.0
     update_min_d: 0.0
     z_hit: 0.5
@@ -56,10 +56,6 @@ bt_navigator:
     bt_loop_duration: 20
     default_server_timeout: 20
     wait_for_service_timeout: 1000
-    # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
-    # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
-    # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
-    # They can be set here or via a RewrittenYaml remap from a parent launch file to Nav2.
     plugin_lib_names:
       - nav2_compute_path_to_pose_action_bt_node
       - nav2_compute_path_through_poses_action_bt_node
@@ -129,12 +125,12 @@ controller_server:
     goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
     controller_plugins: ["FollowPath"]
 
-    # Progress checker parameters
+    # 进度检查
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.15
       movement_time_allowance: 30.0
-    # Goal checker parameters
+    # 到点检查
     #precise_goal_checker:
     #  plugin: "nav2_controller::SimpleGoalChecker"
     #  xy_goal_tolerance: 0.25
@@ -145,7 +141,7 @@ controller_server:
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.35
       yaw_goal_tolerance: 0.45
-    # DWB parameters
+    # DWB 控制器
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
@@ -193,8 +189,7 @@ local_costmap:
     ros__parameters:
       update_frequency: 5.0
       publish_frequency: 2.0
-      # The controller follows map-frame paths; avoid a stale map->odom
-      # conversion inside DWB on this Humble/Gazebo setup.
+      # DWB 使用 map 坐标系路径，避开过期的 map->odom 转换。
       global_frame: map
       robot_base_frame: base_footprint
       use_sim_time: True
@@ -271,8 +266,7 @@ global_costmap:
 map_server:
   ros__parameters:
     use_sim_time: True
-    # Overridden in launch by the "map" launch configuration or provided default value.
-    # To use in yaml, remove the default "map" value in the tb3_simulation_launch.py file & provide full path to map below.
+    # 启动文件会设置 yaml_filename。
     yaml_filename: ""
 
 map_saver:

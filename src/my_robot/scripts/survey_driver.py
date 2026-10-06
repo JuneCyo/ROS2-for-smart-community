@@ -1,24 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-自动"跑遍全场"的航点跟踪节点 —— 给 Cartographer 建图用
-=====================================================
-* 位姿直接取 /odom(gazebo_ros_diff_drive 发的是世界坐标, 见 my_robot/README.md)
-* 前方障碍用 /scan 的前向扇区判断, 太近就原地转向躲开(简单反应式避障)
-* 默认路线: 沿外墙跑一圈 + 中间走廊补扫, 覆盖 10x10 m 全场景
+"""沿场地外圈和中间通道行驶，供 Cartographer 建图。
 
-用法:
-    ros2 run my_robot survey_driver.py
-    ros2 run my_robot survey_driver.py --ros-args -p speed:=0.25 -p loops:=2
-    ros2 run my_robot survey_driver.py --ros-args -p route:=clockwise
-
-参数:
-    speed       前进速度(m/s)            默认 0.22
-    turn_speed  原地/转向角速度(rad/s)    默认 0.8
-    goal_tol    到点判定半径(m)           默认 0.18
-    stop_dist   前方障碍急停距离(m)       默认 0.35
-    loops       跑几圈                    默认 1
-    route       default(逆时针) / clockwise
+用 /odom 跟踪航点，用 /scan 避开近处障碍。路线、速度和圈数由 ROS 参数设置。
 """
 import math
 
@@ -28,21 +12,15 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
-# 场地 10x10 m, 内墙 ±4.8; 已经存在的障碍:
-#   * 车(平面贴图 1x1m, 很薄): y=-4, x=-1.2/-2.6/-4.0
-#   * 人偶立牌(1.6x1.2m 竖板): (2.5, 2.0) 竖着放, 约占 x≈2.5, y∈[1.2,2.8]
-#   * 红绿灯 1(龙门架): 中心 (4,0), 两根立柱在 x=3.27 / x=4.73, 横梁在 1.85m 高处
-#   * 红绿灯 2(龙门架): 中心 (-2,0.25), 立柱 x=-2.73 / x=-1.27
-#   * 楼宇A/B/C + 垃圾桶: 东西向一排, 占 x∈[-3.31, 3.31], y∈[-3.03, -2.17](长白线走廊里)
-# 路线: 东侧走 x=3.9(从红绿灯两根柱子中间穿过), 西侧 x=-4.2, 南侧 y≈-3.6(避开 y=-4 的车),
-#       再从楼宇排北面 y=-1.40 一路向西补扫北面。
+# 东侧走 x=3.9，穿过红绿灯立柱；南侧走 y≈-3.6，避开 y=-4 的停车列。
+# 最后一段沿楼宇北侧 y=-1.4 补扫。
 ROUTE_CCW = [
-    (3.90, -3.60), (3.90, 3.90),          # 东侧主干道向北(穿过红绿灯龙门架)
-    (-0.20, 3.90), (-4.20, 3.90),         # 北侧向西
-    (-4.20, -3.30),                        # 西侧向南(在车北边停住)
-    (-0.30, -3.60), (3.60, -3.60),        # 南侧向东(从车与楼宇排之间过)
-    (3.60, -1.40),                         # 向北
-    (-3.60, -1.40),                        # 沿楼宇排北面一路向西(补扫这一侧)
+    (3.90, -3.60), (3.90, 3.90),
+    (-0.20, 3.90), (-4.20, 3.90),
+    (-4.20, -3.30),
+    (-0.30, -3.60), (3.60, -3.60),
+    (3.60, -1.40),
+    (-3.60, -1.40),
 ]
 ROUTE_CW = [
     (3.90, 3.90), (3.90, -3.60),
@@ -87,7 +65,7 @@ class SurveyDriver(Node):
         self.idx = 0
         self.loops = 0
         self.finished = False
-        # 卡死检测: 一段时间内几乎没挪动就倒车一下
+        # 20 秒内位移过小时短暂倒车脱困。
         self.last_x = self.last_y = None
         self.last_progress = 0.0
         self.reverse_until = 0.0
@@ -95,7 +73,6 @@ class SurveyDriver(Node):
         self.get_logger().info('survey_driver 启动: %d 个航点, 速度 %.2f m/s, 跑 %d 圈'
                                % (len(self.route), self.speed, self.loops_target))
 
-    # ---------------------------------------------------------------- 回调
     def on_odom(self, msg):
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
@@ -107,7 +84,7 @@ class SurveyDriver(Node):
         self.scan = msg
 
     def sector_min(self, a0, a1):
-        """某个角度扇区内第 3 小的距离(抗单条杂散读数)"""
+        """取扇区内第三近的距离，过滤单条过近读数。"""
         if self.scan is None:
             return float('inf')
         inc = self.scan.angle_increment
@@ -126,7 +103,6 @@ class SurveyDriver(Node):
     def stop_robot(self):
         self.pub.publish(Twist())
 
-    # ---------------------------------------------------------------- 主循环
     def on_timer(self):
         if self.finished:
             return
@@ -134,7 +110,6 @@ class SurveyDriver(Node):
             return
 
         now = self.get_clock().now().nanoseconds * 1e-9
-        # --- 卡死检测(每 20s 检查一次走了多远) ---
         if self.last_x is None or now - self.last_progress > 20.0:
             if self.last_x is not None:
                 moved = math.hypot(self.x - self.last_x, self.y - self.last_y)
@@ -166,14 +141,14 @@ class SurveyDriver(Node):
             return
 
         err = wrap(math.atan2(dy, dx) - self.yaw)
-        front = self.sector_min(-0.45, 0.45)      # 前方 ±26°
-        front_near = self.sector_min(-1.1, 1.1)   # 前方 ±63°
-        left_free = self.sector_min(0.5, 2.2)     # 左侧
-        right_free = self.sector_min(-2.2, -0.5)  # 右侧
+        front = self.sector_min(-0.45, 0.45)
+        front_near = self.sector_min(-1.1, 1.1)
+        left_free = self.sector_min(0.5, 2.2)
+        right_free = self.sector_min(-2.2, -0.5)
 
         cmd = Twist()
         if front < self.stop_dist:
-            # 太近: 停车, 朝空间更大的一侧原地转(而不是死盯着目标方向)
+            # 前方被挡住时，转向空余更大的一侧。
             cmd.linear.x = 0.0
             cmd.angular.z = self.turn_speed if left_free >= right_free else -self.turn_speed
             self.get_logger().warn('前方 %.2f m 有障碍, 原地转向(左%.1f/右%.1f)'

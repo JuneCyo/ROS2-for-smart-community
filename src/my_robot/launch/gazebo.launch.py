@@ -1,25 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-my_robot 一键仿真启动
-=====================
-  1. 启动 Gazebo (默认加载 smart_community 的竞赛场地 competition_world.sdf,
-     地面就是那张画着白色车道线/白线方框的贴图)
-  2. 用 xacro 生成机器人模型 -> robot_state_publisher 发布 /robot_description 与 TF
-  3. spawn_entity 把机器人放进白线方框内 (默认 x=3.95, y=-4.00 = 方框中心)
-  4. 可选: 同时打开 RViz2
-
-用法:
-    ros2 launch my_robot gazebo.launch.py
-    ros2 launch my_robot gazebo.launch.py gui:=false                 # 无界面(无头)
-    ros2 launch my_robot gazebo.launch.py x:=3.0 y:=-4.0             # 自定义起始位姿
-    ros2 launch my_robot gazebo.launch.py rviz:=true                 # 顺便开 RViz
-    ros2 launch my_robot gazebo.launch.py world:=/path/to/xxx.world  # 换场地
-
-检查:
-    ros2 topic list | grep -E "scan|camera|odom"
-    ros2 run teleop_twist_keyboard teleop_twist_keyboard             # 键盘遥控
-"""
+"""启动竞赛场地、机器人状态发布器和 Gazebo 中的机器人。"""
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -33,12 +14,12 @@ from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-# Gazebo Classic 11 的内置资源路径(着色器 RTShaderLib 在这里), 见下面的说明
+# Gazebo Classic 的 RTShaderLib 位于此目录。
 GAZEBO_BUILTIN_RES = '/usr/share/gazebo-11'
 
 
 def _share(pkg):
-    """取包 share 目录, 取不到返回 None(方便在缺包时给出友好回退)"""
+    """返回包的 share 目录；包不存在时返回 None。"""
     try:
         return get_package_share_directory(pkg)
     except Exception:
@@ -50,7 +31,6 @@ def generate_launch_description():
     sc_share = _share('smart_community')
     gazebo_ros_share = get_package_share_directory('gazebo_ros')
 
-    # ---------- 默认世界: 竞赛场地(地面贴图上有白线方框) ----------
     sc_world = None
     if sc_share:
         candidate = os.path.join(sc_share, 'worlds', 'competition_world.sdf')
@@ -58,15 +38,14 @@ def generate_launch_description():
             sc_world = candidate
     default_world = sc_world or os.path.join(gazebo_ros_share, 'worlds', 'empty.world')
 
-    # ---------- 启动参数 ----------
     declared = [
         DeclareLaunchArgument('world', default_value=default_world,
                               description='Gazebo world 文件'),
-        # 白线方框: x∈[3.26,4.73], y∈[-4.75,-3.33], 方框中心 ≈ (4.0,-4.0)
+        # 默认位置在场地东南角的白线方框内。
         DeclareLaunchArgument('x', default_value='3.95',
                               description='机器人起始 x (白线方框中心)'),
         DeclareLaunchArgument('y', default_value='-4.00', description='机器人起始 y'),
-        # 地面是 10x10x0.1 的 box(顶面 z=0.05), 留 1cm 余量让轮子轻轻落地
+        # 地面顶面 z=0.05；车体生成时留 1 cm 间隙。
         DeclareLaunchArgument('z', default_value='0.06', description='机器人起始 z'),
         DeclareLaunchArgument('yaw', default_value='1.5708', description='机器人起始偏航角(rad)'),
         DeclareLaunchArgument('gui', default_value='true', description='是否打开 Gazebo 客户端'),
@@ -90,8 +69,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     spawn_delay = LaunchConfiguration('spawn_delay')
 
-    # ---------- Gazebo 资源路径 ----------
-    # ① 模型路径: world 里用 model://xxx 引用模型, 必须能搜到 smart_community/models
+    # world 中的 model:// 引用需要这些模型目录。
     model_paths = []
     if sc_share:
         model_paths.append(os.path.join(sc_share, 'models'))
@@ -103,15 +81,8 @@ def generate_launch_description():
     set_model_path = SetEnvironmentVariable(
         'GAZEBO_MODEL_PATH', ':'.join([p for p in model_paths if p]))
 
-    # ② ★资源路径(坑): Gazebo Classic 只要发现 GAZEBO_RESOURCE_PATH 非空, 就**丢弃**
-    #    自己的内置资源路径 /usr/share/gazebo-11。而本机 ROS 的若干 gazebo 插件包
-    #    (gazebo_no_physics_plugin / gazebo_planar_move_plugin ...) 会通过 env hook
-    #    把 GAZEBO_RESOURCE_PATH 设成它们的 share 目录 —— 于是 Gazebo 找不到
-    #    RTShaderLib 着色器, 渲染初始化失败, 症状是:
-    #      [Err] RTShaderSystem.cc Unable to find shader lib
-    #      [Err] CameraSensor.cc Unable to create CameraSensor
-    #    表现为 /scan、/odom 都正常, 但**没有任何图像话题**。
-    #    这里把内置路径显式补回去, 相机才有图。
+    # ROS 插件可能覆盖 GAZEBO_RESOURCE_PATH，使 Gazebo 找不到 RTShaderLib。
+    # 此时 /scan、/odom 正常，但相机不会发布图像；保留内置资源目录。
     res_paths = [GAZEBO_BUILTIN_RES]
     if os.environ.get('GAZEBO_RESOURCE_PATH'):
         res_paths.append(os.environ['GAZEBO_RESOURCE_PATH'])
@@ -125,12 +96,10 @@ def generate_launch_description():
         plugin_paths.append(os.environ['GAZEBO_PLUGIN_PATH'])
     set_plugin_path = SetEnvironmentVariable('GAZEBO_PLUGIN_PATH', ':'.join(plugin_paths))
 
-    # ③ 当前 VMware 虚拟机的 vmwgfx OpenGL 加速可用。默认使用它，
-    #    只有图形驱动出问题时才显式设置 LIBGL_ALWAYS_SOFTWARE=1 回退。
+    # 默认使用 vmwgfx；图形驱动异常时可设置 LIBGL_ALWAYS_SOFTWARE=1。
     set_software_gl = SetEnvironmentVariable(
         'LIBGL_ALWAYS_SOFTWARE', os.environ.get('LIBGL_ALWAYS_SOFTWARE', '0'))
 
-    # ---------- 机器人描述 ----------
     xacro_file = os.path.join(pkg_share, 'urdf', 'my_robot.urdf.xacro')
     robot_description = ParameterValue(
         Command([
@@ -149,14 +118,13 @@ def generate_launch_description():
                      'use_sim_time': use_sim_time}],
     )
 
-    # ---------- Gazebo: gzserver(带 gazebo_ros 系统插件) + gzclient ----------
     start_gzserver = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(gazebo_ros_share, 'launch', 'gzserver.launch.py')),
         launch_arguments={'world': world,
                           'verbose': verbose,
-                          'init': 'true',      # libgazebo_ros_init.so   -> /clock 等
-                          'factory': 'true'}.items(),  # libgazebo_ros_factory.so -> /spawn_entity
+                          'init': 'true',      # 提供 /clock
+                          'factory': 'true'}.items(),  # 提供 /spawn_entity
     )
     start_gzclient = ExecuteProcess(
         cmd=['gzclient'],
@@ -164,7 +132,6 @@ def generate_launch_description():
         condition=IfCondition(gui),
     )
 
-    # ---------- 生成机器人 ----------
     spawn_robot = TimerAction(
         period=spawn_delay,
         actions=[
@@ -181,7 +148,6 @@ def generate_launch_description():
         ],
     )
 
-    # ---------- 可选 RViz2 ----------
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',

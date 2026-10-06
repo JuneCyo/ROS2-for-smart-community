@@ -1,11 +1,6 @@
 --[[
-  my_robot 的 Cartographer 2D 建图配置
-  ====================================
-  * 只用 360° 激光雷达 + 轮式里程计(无 IMU)
-  * TF 树: map -> odom -> base_footprint -> lidar_link
-    其中 odom->base_footprint 由 gazebo_ros_diff_drive 提供(世界坐标),
-    map->odom 由 Cartographer 自己算并发布
-  用法见 launch/cartographer.launch.py
+  Cartographer 使用激光雷达和轮式里程计，不使用 IMU。
+  Gazebo 发布 odom->base_footprint，Cartographer 发布 map->odom。
 ]]
 include "map_builder.lua"
 include "trajectory_builder.lua"
@@ -15,13 +10,13 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
 
   map_frame = "map",
-  tracking_frame = "base_footprint",   -- 机器人本体(没有 IMU, 用底盘)
+  tracking_frame = "base_footprint",   -- 无 IMU，跟踪底盘
   published_frame = "base_footprint",
   odom_frame = "odom",
-  provide_odom_frame = false,          -- odom 由 gazebo 插件提供, 不再重复发布
+  provide_odom_frame = false,          -- odom 由 Gazebo 发布
   publish_frame_projected_to_2d = true,
 
-  use_odometry = true,                 -- 用轮式里程计做初值
+  use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,
 
@@ -43,7 +38,7 @@ options = {
 }
 
 MAP_BUILDER.use_trajectory_builder_2d = true
-MAP_BUILDER.num_background_threads = 2        -- 本机只有 2 核
+MAP_BUILDER.num_background_threads = 2        -- 虚拟机分配了 2 核
 
 TRAJECTORY_BUILDER_2D.min_range = 0.05
 TRAJECTORY_BUILDER_2D.max_range = 12.0
@@ -51,7 +46,7 @@ TRAJECTORY_BUILDER_2D.missing_data_ray_length = 4.0
 TRAJECTORY_BUILDER_2D.use_imu_data = false
 TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
 
--- 场地只有 10x10 m, 走慢一点, 把运动滤波收紧一些, 保证闭环质量
+-- 10x10 m 场地采用较小的运动滤波阈值。
 TRAJECTORY_BUILDER_2D.motion_filter.max_time_seconds = 0.4
 TRAJECTORY_BUILDER_2D.motion_filter.max_distance_meters = 0.04
 TRAJECTORY_BUILDER_2D.motion_filter.max_angle_radians = math.rad(0.15)

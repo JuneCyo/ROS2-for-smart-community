@@ -1,15 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-只做 URDF/Xacro 建模校验: 不开 Gazebo, 直接用 RViz2 看模型
-==========================================================
-    ros2 launch my_robot display.launch.py                 # 带关节滑条(可手动转轮子)
-    ros2 launch my_robot display.launch.py gui:=false      # 不带滑条, 关节保持 0 位
-    ros2 launch my_robot display.launch.py enable_camera:=false
-
-也可以先把模型导成 URDF 再检查:
-    xacro $(ros2 pkg prefix my_robot)/share/my_robot/urdf/my_robot.urdf.xacro > /tmp/my_robot.urdf
-"""
+"""在 RViz 中检查机器人模型；可用 gui 参数切换关节滑条。"""
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -51,7 +42,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{'robot_description': robot_description}],
         ),
-        # 有滑条: joint_state_publisher_gui; 没有滑条: 普通 joint_state_publisher(关节全 0)
+        # 两种 joint_state_publisher 只启动一个。
         Node(
             package='joint_state_publisher_gui',
             executable='joint_state_publisher_gui',

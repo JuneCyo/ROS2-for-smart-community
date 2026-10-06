@@ -1,18 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Cartographer 2D 建图(全场景)
-============================
-先起仿真, 再起本 launch, 然后用 survey_driver 自动跑遍全场(或键盘遥控), 最后存图。
-
-终端 1:  ros2 launch my_robot gazebo.launch.py
-终端 2:  ros2 launch my_robot cartographer.launch.py rviz:=true     # ← RViz 里就能看到地图
-终端 3:  ros2 run my_robot survey_driver.py                          # 自动跑遍全场
-         (或 ros2 run teleop_twist_keyboard teleop_twist_keyboard 手动开)
-终端 4:  bash $(ros2 pkg prefix my_robot)/share/my_robot/tools/save_cartographer_map.sh
-
-只看地图(不建图): ros2 run rviz2 rviz2 -d $(ros2 pkg prefix my_robot)/share/my_robot/rviz/cartographer.rviz
-"""
+"""启动 Cartographer 2D 建图；仿真和巡航节点分别启动。"""
 import os
 
 from ament_index_python.packages import get_package_share_directory

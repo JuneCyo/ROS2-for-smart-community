@@ -6,7 +6,7 @@ import os
 def generate_launch_description():
     pkg_share = get_package_share_directory('smart_community')
 
-    # Gazebo模型路径，把包内models追加到原有GAZEBO_MODEL_PATH前面
+    # 优先搜索本包模型，保留已有 Gazebo 模型路径。
     model_dir = os.path.join(pkg_share, "models")
     old_gazebo_path = os.environ.get("GAZEBO_MODEL_PATH", "")
     if old_gazebo_path:
@@ -26,7 +26,7 @@ def generate_launch_description():
         value=plugin_dir + (":" + old_plugin_path if old_plugin_path else "")
     )
 
-    # 和一键导航使用同一 VMware 图形设置，允许显式回退到软件渲染。
+    # 驱动异常时可通过环境变量切换到软件渲染。
     set_render = SetEnvironmentVariable(
         name="LIBGL_ALWAYS_SOFTWARE",
         value=os.environ.get("LIBGL_ALWAYS_SOFTWARE", "0")
@@ -34,7 +34,6 @@ def generate_launch_description():
 
     world_file = os.path.join(pkg_share, "worlds", "competition_world.sdf")
 
-    # 启动gazebo加载world
     start_gazebo = ExecuteProcess(
         cmd=["gazebo", world_file],
         output="screen"

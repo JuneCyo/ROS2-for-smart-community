@@ -1,30 +1,20 @@
 <?xml version="1.0"?>
-<!--
-  my_robot 传感器宏 (URDF/Xacro)
-  ==============================
-  * my_lidar_360 : 360° 二维激光雷达 (sensor type="ray", 插件 libgazebo_ros_ray_sensor.so)
-  * my_camera    : 单目相机        (sensor type="camera", 插件 libgazebo_ros_camera.so)
-
-  约定: 宏的 xyz 参数 = 该传感器 link 原点在 parent link 坐标系下的位置。
-  Gazebo 相机沿 link 的 +x 方向看, 激光雷达在 link 原点的水平面上扫描。
--->
+<!-- xyz 是传感器相对 parent link 的位置；相机沿 +x 方向观察。 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- ===================== 材质 ===================== -->
+  <!-- 传感器材质 -->
   <material name="mr_dark">   <color rgba="0.16 0.16 0.18 1.0"/></material>
   <material name="mr_glass">  <color rgba="0.05 0.09 0.14 1.0"/></material>
   <material name="mr_gray">   <color rgba="0.62 0.64 0.66 1.0"/></material>
 
-  <!-- ===================== 360° 激光雷达 ===================== -->
+  <!-- 360° 激光雷达 -->
   <xacro:macro name="my_lidar_360" params="prefix parent xyz samples:=360 update_rate:=10.0 range_max:=12.0">
     <link name="${prefix}lidar_link">
-      <!-- 外壳 -->
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry><cylinder radius="0.035" length="0.040"/></geometry>
         <material name="mr_dark"/>
       </visual>
-      <!-- 激光窗口 -->
       <visual>
         <origin xyz="0 0 0.006" rpy="0 0 0"/>
         <geometry><cylinder radius="0.031" length="0.020"/></geometry>
@@ -56,7 +46,7 @@
             <horizontal>
               <samples>${samples}</samples>
               <resolution>1.0</resolution>
-              <!-- 360° 全向: -pi ~ +pi -->
+              <!-- 扫描范围：-pi 到 +pi。 -->
               <min_angle>-3.14159265</min_angle>
               <max_angle>3.14159265</max_angle>
             </horizontal>
@@ -75,7 +65,7 @@
         <plugin name="lidar_controller" filename="libgazebo_ros_ray_sensor.so">
           <ros>
             <namespace>/</namespace>
-            <!-- ~ 表示传感器自身命名空间, 输出到 /scan -->
+            <!-- ~/out 映射到 /scan。 -->
             <remapping>~/out:=scan</remapping>
           </ros>
           <output_type>sensor_msgs/LaserScan</output_type>
@@ -85,7 +75,7 @@
     </gazebo>
   </xacro:macro>
 
-  <!-- ===================== 单目相机 ===================== -->
+  <!-- 单目相机 -->
   <xacro:macro name="my_camera" params="prefix parent xyz fov:=1.6 width:=960 height:=720 update_rate:=8.0">
     <link name="${prefix}camera_link">
       <visual>
@@ -93,7 +83,6 @@
         <geometry><box size="0.028 0.060 0.028"/></geometry>
         <material name="mr_dark"/>
       </visual>
-      <!-- 镜头 -->
       <visual>
         <origin xyz="0.017 0 0" rpy="0 1.5707963 0"/>
         <geometry><cylinder radius="0.010" length="0.012"/></geometry>
@@ -137,8 +126,7 @@
           <ros>
             <namespace>/</namespace>
           </ros>
-          <!-- camera_name 直接决定话题: /camera/image_raw, /camera/camera_info
-               (不要再往里写 image_raw, 否则会变成 /camera/image_raw/image_raw) -->
+          <!-- camera_name 决定 /camera/image_raw 和 /camera/camera_info 的前缀。 -->
           <camera_name>camera</camera_name>
           <frame_name>${prefix}camera_link</frame_name>
         </plugin>

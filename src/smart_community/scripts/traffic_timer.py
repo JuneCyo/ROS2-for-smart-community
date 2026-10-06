@@ -6,25 +6,21 @@ from ros_gz_interfaces.srv import SetEntityVisual
 class TrafficTimerNode(Node):
     def __init__(self):
         super().__init__('traffic_timer_node')
-        # Ignition 修改visual材质服务
         self.client = self.create_client(SetEntityVisual, '/gz/set_entity_visual')
         while not self.client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("等待 /gz/set_entity_visual 服务...")
 
-        # ========== 红绿灯1 ==========
         self.l1_red = "traffic_light1::light_red::red_vis"
         self.l1_yellow = "traffic_light1::light_yellow::yellow_vis"
         self.l1_green = "traffic_light1::light_green::green_vis"
-        # ========== 红绿灯2 ==========
         self.l2_red = "traffic_light2::light_red::red_vis"
         self.l2_yellow = "traffic_light2::light_yellow::yellow_vis"
         self.l2_green = "traffic_light2::light_green::green_vis"
 
-        # 时序：红5s，黄2s，绿5s
+        # 红灯 5 秒，黄灯 2 秒，绿灯 5 秒。
         self.state = 0
         self.durations = [5.0, 2.0, 5.0]
 
-        # 初始：红灯亮，其余黑色
         self.set_all_lights(
             l1_red=[1,0,0,1], l1_yellow=[0,0,0,1], l1_green=[0,0,0,1],
             l2_red=[1,0,0,1], l2_yellow=[0,0,0,1], l2_green=[0,0,0,1]
@@ -55,19 +51,16 @@ class TrafficTimerNode(Node):
         self.state = (self.state + 1) % 3
         self.timer.cancel()
         if self.state == 0:
-            #红灯
             self.set_all_lights(
                 [1,0,0,1],[0,0,0,1],[0,0,0,1],
                 [1,0,0,1],[0,0,0,1],[0,0,0,1]
             )
         elif self.state ==1:
-            #黄灯
             self.set_all_lights(
                 [0,0,0,1],[1,1,0,1],[0,0,0,1],
                 [0,0,0,1],[1,1,0,1],[0,0,0,1]
             )
         elif self.state ==2:
-            #绿灯
             self.set_all_lights(
                 [0,0,0,1],[0,0,0,1],[0,1,0,1],
                 [0,0,0,1],[0,0,0,1],[0,1,0,1]

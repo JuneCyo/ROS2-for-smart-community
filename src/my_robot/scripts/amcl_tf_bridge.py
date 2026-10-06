@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Continuously broadcast map->odom from AMCL pose and Gazebo odometry.
-
-Humble AMCL in this simulation can stop refreshing its TF while still
-publishing /amcl_pose. Nav2's controller rejects that stale transform.
-"""
+"""Refresh map->odom from AMCL fixes and Gazebo odometry for Nav2."""
 import math
 
 import rclpy
@@ -21,8 +17,7 @@ def yaw_of(q):
 class AmclTfBridge(Node):
     def __init__(self):
         super().__init__('amcl_tf_bridge')
-        # Seed map->odom before AMCL publishes its first pose. Otherwise a
-        # startup race can leave Nav2 waiting for the transform indefinitely.
+        # Seed the TF before AMCL's first pose so Nav2 can finish startup.
         self.declare_parameter('initial_x', 3.95)
         self.declare_parameter('initial_y', -4.0)
         self.declare_parameter('initial_yaw', math.pi / 2)
@@ -43,9 +38,7 @@ class AmclTfBridge(Node):
 
     def on_amcl_pose(self, msg):
         self.amcl_pose = msg.pose.pose
-        # Keep the odometry pose from this localization update. Recomputing
-        # map->odom against every newer odom message would pin the robot to
-        # the last AMCL position whenever AMCL temporarily stops publishing.
+        # Fix the odom anchor until the next AMCL update; otherwise the map pose freezes.
         self.odom_at_amcl = self.odom_pose
 
     def on_odom(self, msg):

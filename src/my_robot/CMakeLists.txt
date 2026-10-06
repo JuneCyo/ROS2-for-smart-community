@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.16)
 project(my_robot)
 find_package(ament_cmake REQUIRED)
 
-# 一次性安装全部资源，不要再重复写launch/rviz
 install(DIRECTORY
   urdf
   launch
@@ -16,7 +15,6 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
-# Python脚本
 install(PROGRAMS
   scripts/survey_driver.py
   scripts/navigate_traffic_lights.py
@@ -30,10 +28,8 @@ install(PROGRAMS
 )
 
 
-# 说明: 这里刻意不在 CMake 配置阶段跑 xacro ——
-# my_robot.urdf.xacro 里用的是 $(find my_robot)/urdf/sensors.xacro,
-# 而配置阶段包还没进 ament 索引, 会报 "package 'my_robot' not found"。
-# 装完之后自检:
+# 配置阶段还查不到本包，xacro 必须等安装后再运行。
+# 安装后可检查:
 #   xacro $(ros2 pkg prefix my_robot)/share/my_robot/urdf/my_robot.urdf.xacro > /tmp/my_robot.urdf
 #   gz sdf -p /tmp/my_robot.urdf > /dev/null && echo "URDF OK"
 
