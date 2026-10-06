@@ -3,7 +3,7 @@
 Nav2 plans each leg from the live AMCL pose. A small pure-pursuit controller
 tracks that plan on /cmd_vel because this Gazebo/Humble Nav2 controller can
 continue driving after its internal TF cache stops updating.
-Stop in front of each of the three cars and confirm its plate before moving on.
+Count people on both boards, then read the three car plates at their stops.
 """
 import math
 import os
@@ -16,14 +16,14 @@ import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
-from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, Twist
+from nav_msgs.msg import OccupancyGrid, Odometry
 from nav2_msgs.action import ComputePathToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import String, Float32MultiArray
+from std_msgs.msg import String, Float32MultiArray, Int32MultiArray
 
 START = (3.95, -4.0, math.pi / 2)
 PLATE_STOPS = [
@@ -31,12 +31,18 @@ PLATE_STOPS = [
     ('车牌识别 2/3', -2.6, -2.50, -math.pi / 2),  # Car2
     ('车牌识别 3/3', -1.2, -2.50, -math.pi / 2),  # Car1
 ]
+PERSON_STOPS = [
+    ('人偶立牌 A', 3.95, 2.20, math.pi),
+    ('人偶立牌 B', 1.05, 2.20, math.pi),
+]
 ROUTE = [
    (' 起步直行 ', 3.95, -2.65, math.pi/ 2),
    (' 红绿灯 1 南侧 ', 3.95, -0.85, math.pi/ 2),
    (' 通过红绿灯 1', 3.95, 0.85, math.pi/ 2),
+   PERSON_STOPS[0],
    (' 北端左转 ', 3.95, 3.8, math.pi/ 2),
    (' 北侧向西 ', 1.05, 3.8, math.pi),
+   PERSON_STOPS[1],
    (' 再次左转向南 ', 1.05, 0.10, -math.pi/ 2),
    (' 通过红绿灯 2', -2.0, 0.10, math.pi),
    (' 西端左转 ', -4.0, 0.10, -math.pi/ 2),
@@ -47,9 +53,15 @@ ROUTE = [
 ]
 PLATE_ROUTE_INDICES = tuple(i for i, waypoint in enumerate(ROUTE)
                             if waypoint in PLATE_STOPS)
+PERSON_ROUTE_INDICES = tuple(i for i, waypoint in enumerate(ROUTE)
+                             if waypoint in PERSON_STOPS)
+SECOND_LIGHT_ROUTE_INDEX = next(i for i, waypoint in enumerate(ROUTE)
+                                if waypoint[0].strip() == '通过红绿灯 2')
 PLATE_TOTAL_NUM = len(PLATE_STOPS)
 PLATE_POSITION_TOL = 0.20
 PLATE_YAW_TOL = 0.22
+PERSON_STATUS_TEXT = {'confirmed': '已确认', 'unverified': '未确认',
+                      'unreadable': '未识别'}
 def angle_diff(a, b):
     return math.atan2(math.sin(a - b), math.cos(a - b))
 
@@ -64,13 +76,20 @@ class TrafficLightRoute(Node):
         self.declare_parameter('speed', 0.18)
         self.declare_parameter('plate_results_file', os.path.join(
             os.environ.get('ROS_LOG_DIR', os.getcwd()), 'plate_results.csv'))
+        self.declare_parameter('person_results_file', os.path.join(
+            os.environ.get('ROS_LOG_DIR', os.getcwd()), 'person_results.csv'))
         self.index = int(self.get_parameter('start_at').value)
         if not 0 <= self.index < len(ROUTE):
             raise ValueError('start_at must be between 0 and %d' % (len(ROUTE) - 1))
         self.speed = float(self.get_parameter('speed').value)
         self.plate_results_file = str(self.get_parameter('plate_results_file').value)
+        self.person_results_file = str(self.get_parameter('person_results_file').value)
         self.pose = None
         self.pose_time = None
+        self.amcl_time = None
+        self.map_anchor = None
+        self.odom_anchor = None
+        self.odom_pose = None
         self.scan = None
         self.scan_time = None
         self.static_map = None
@@ -85,7 +104,7 @@ class TrafficLightRoute(Node):
         self.next_plan_time_ns = 0
         self.finished = False
         self.exit_code = 1
-        # ============ 车牌打卡变量 ============
+        # 车牌和人偶立牌的停靠识别状态
         self.plate_sub = self.create_subscription(
             Float32MultiArray,
             '/plate_detect',
@@ -102,9 +121,20 @@ class TrafficLightRoute(Node):
         self.plate_need_frames = 3
         self.plate_votes = Counter()
         self.plate_facing_index = None
-        # ========================================
+        self.person_request_pub = self.create_publisher(String, '/person_count/request', 10)
+        self.create_subscription(Int32MultiArray, '/person_count/result', self.person_result_callback, 10)
+        final_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                               durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.person_final_pub = self.create_publisher(String, '/person_count/final', final_qos)
+        self.person_station_index = None
+        self.person_start_ns = 0
+        self.person_last_request_ns = 0
+        self.person_votes = Counter()
+        self.person_counts = {}
+        self.person_final_text = ''
         self.pub = self.create_publisher(Twist, '/cmd_vel_nav', 10)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.on_pose, 10)
+        self.create_subscription(Odometry, '/odom', self.on_odom, 10)
         self.create_subscription(LaserScan, '/scan', self.on_scan, 10)
         signal_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                                 durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -179,6 +209,77 @@ class TrafficLightRoute(Node):
             self.get_logger().error(f'保存车牌结果失败：{exc}', throttle_duration_sec=5.0)
             return False
 
+    def person_result_callback(self, msg: Int32MultiArray):
+        if self.person_station_index != self.index or self.index not in PERSON_ROUTE_INDICES:
+            return
+        board_id = PERSON_ROUTE_INDICES.index(self.index) + 1
+        if len(msg.data) == 2 and msg.data[0] == board_id and 1 <= msg.data[1] <= 20:
+            self.person_votes[msg.data[1]] += 1
+
+    def save_person_result(self, counts):
+        a_count, a_status, a_votes = counts.get('A', ('', 'unreadable', 0))
+        b_count, b_status, b_votes = counts.get('B', ('', 'unreadable', 0))
+        confirmed = a_status == b_status == 'confirmed'
+        total = a_count + b_count if confirmed else ''
+        summary = (f'立牌人数最终结果：A={a_count or "未识别"}（{PERSON_STATUS_TEXT[a_status]}），'
+                   f'B={b_count or "未识别"}（{PERSON_STATUS_TEXT[b_status]}），'
+                   f'总人数={total if confirmed else "未确认"}')
+        try:
+            output_dir = os.path.dirname(os.path.abspath(self.person_results_file))
+            os.makedirs(output_dir, exist_ok=True)
+            needs_header = (not os.path.exists(self.person_results_file)
+                            or os.path.getsize(self.person_results_file) == 0)
+            with open(self.person_results_file, 'a', encoding='utf-8', newline='') as output:
+                writer = csv.writer(output)
+                if needs_header:
+                    writer.writerow(('time', 'board_a', 'board_b', 'total',
+                                     'status_a', 'status_b', 'votes_a', 'votes_b'))
+                writer.writerow((datetime.now().astimezone().isoformat(timespec='seconds'),
+                                 a_count, b_count, total, a_status, b_status, a_votes, b_votes))
+            return summary
+        except OSError as exc:
+            self.get_logger().error(f'保存人偶人数失败：{exc}', throttle_duration_sec=5.0)
+            return None
+
+    def handle_person_stop(self):
+        now_ns = self.get_clock().now().nanoseconds
+        board_number = PERSON_ROUTE_INDICES.index(self.index) + 1
+        board_name = 'AB'[board_number - 1]
+        if self.person_station_index != self.index:
+            self.person_station_index = self.index
+            self.person_start_ns = now_ns
+            self.person_last_request_ns = now_ns - 1_000_000_000
+            self.person_votes.clear()
+            self.get_logger().info(f'已正对 {board_name} 立牌，开始识别人数')
+        if now_ns - self.person_last_request_ns >= 800_000_000:
+            self.person_request_pub.publish(String(data=board_name))
+            self.person_last_request_ns = now_ns
+        count, votes = self.person_votes.most_common(1)[0] if self.person_votes else ('', 0)
+        elapsed = (now_ns - self.person_start_ns) / 1e9
+        if votes < 2 and elapsed < 20.0:
+            if elapsed >= 3.0:
+                self.get_logger().info(
+                    f'{board_name} 立牌等待稳定计数：{votes}/2 次，已等待 {elapsed:.0f}/20 秒',
+                    throttle_duration_sec=5.0)
+            return
+        status = 'confirmed' if votes >= 2 else ('unverified' if votes else 'unreadable')
+        counts = {**self.person_counts, board_name: (count, status, votes)}
+        if board_number == len(PERSON_STOPS):
+            summary = self.save_person_result(counts)
+            if summary is None:
+                return
+            self.person_final_text = summary
+            self.person_final_pub.publish(String(data=summary))
+            self.get_logger().info(summary)
+        else:
+            self.get_logger().info(f'{board_name} 立牌人数：{count or "未识别"}'
+                                   f'（{PERSON_STATUS_TEXT[status]}）')
+        self.person_counts = counts
+        self.person_station_index = None
+        self.person_votes.clear()
+        self.index += 1
+        self.path = []
+
     def leg(self):
         start = START if self.index == 0 else ROUTE[self.index - 1][1:4]
         goal = ROUTE[self.index][1:4]
@@ -193,6 +294,33 @@ class TrafficLightRoute(Node):
 
     def on_pose(self, msg):
         self.pose = msg.pose.pose
+        self.pose_time = self.amcl_time = self.get_clock().now()
+        self.map_anchor = (self.pose.position.x, self.pose.position.y,
+                           yaw_of(self.pose.orientation))
+        if self.odom_pose is not None:
+            self.odom_anchor = (self.odom_pose.position.x, self.odom_pose.position.y,
+                                yaw_of(self.odom_pose.orientation))
+
+    def on_odom(self, msg):
+        self.odom_pose = msg.pose.pose
+        if self.map_anchor is None:
+            return
+        if self.odom_anchor is None:
+            self.odom_anchor = (self.odom_pose.position.x, self.odom_pose.position.y,
+                                yaw_of(self.odom_pose.orientation))
+        mx, my, myaw = self.map_anchor
+        ox, oy, oyaw = self.odom_anchor
+        angle = myaw - oyaw
+        dx = self.odom_pose.position.x - ox
+        dy = self.odom_pose.position.y - oy
+        estimate = Pose()
+        estimate.position.x = mx + math.cos(angle) * dx - math.sin(angle) * dy
+        estimate.position.y = my + math.sin(angle) * dx + math.cos(angle) * dy
+        estimate.position.z = self.pose.position.z
+        heading = angle + yaw_of(self.odom_pose.orientation)
+        estimate.orientation.z = math.sin(heading / 2)
+        estimate.orientation.w = math.cos(heading / 2)
+        self.pose = estimate
         self.pose_time = self.get_clock().now()
 
     def on_scan(self, msg):
@@ -226,7 +354,7 @@ class TrafficLightRoute(Node):
 
     def load_white_line_distance(self):
         try:
-            share = get_package_share_directory('my_robot')
+            share = get_package_share_directory('smart_community')
             image_file = os.path.join(share, 'models', 'competition_ground',
                                       'materials', 'textures', 'map1.jpg')
             world_file = os.path.join(share, 'worlds', 'competition_world.sdf')
@@ -302,7 +430,7 @@ class TrafficLightRoute(Node):
     def signal_gate(self, x, y):
         if self.index in (1, 2) and abs(x - 3.95) < 0.43 and -1.52 < y < -0.35:
             return 1, y - (-1.22)
-        if self.index == 6 and abs(y - 0.10) < 0.43 and -1.52 < x < -0.35:
+        if self.index == SECOND_LIGHT_ROUTE_INDEX and abs(y - 0.10) < 0.43 and -1.52 < x < -0.35:
             return 2, -0.82 - x
         return None, None
 
@@ -332,7 +460,7 @@ class TrafficLightRoute(Node):
                 self.avoidance = None
         if self.avoidance is None and obstacle is not None:
             ox = x + math.cos(heading) * obstacle[0] - math.sin(heading) * obstacle[1]
-            oy = y + math.sin(heading) * obstacle[0] + math.cos(heading) * p[1]
+            oy = y + math.sin(heading) * obstacle[0] + math.cos(heading) * obstacle[1]
             obstacle_along = (ox - sx) * ux + (oy - sy) * uy
             for side in (1, -1):
                 target_along = min(length, max(0.0, along) + 0.55)
@@ -471,9 +599,13 @@ class TrafficLightRoute(Node):
             return
         if (self.get_clock().now() - self.pose_time).nanoseconds > 2_000_000_000:
             self.stop()
-            self.get_logger().warn('AMCL 位姿超过 2 秒未更新，已停车等待',
+            self.get_logger().warn('AMCL 和里程计位姿超过 2 秒未更新，已停车等待',
                                    throttle_duration_sec=8.0)
             return
+        if (self.amcl_time is not None and
+                (self.get_clock().now() - self.amcl_time).nanoseconds > 2_000_000_000):
+            self.get_logger().warn('AMCL 暂时未更新，使用里程计继续导航',
+                                   throttle_duration_sec=8.0)
         if self.scan_time is None or (self.get_clock().now() - self.scan_time).nanoseconds > 1_000_000_000:
             self.stop()
             self.get_logger().warn('激光扫描超过 1 秒未更新，已停车等待', throttle_duration_sec=5.0)
@@ -492,6 +624,11 @@ class TrafficLightRoute(Node):
         # =========航点到达判定，距离0.20，旋转增益降低，消除来回摇摆=========
         if distance_to_goal < 0.20:
             self.stop()
+            if self.index in PERSON_ROUTE_INDICES and self.person_station_index == self.index:
+                if abs(angle_diff(gyaw, heading)) < 0.40:
+                    self.handle_person_stop()
+                    return
+                self.person_station_index = None
             if self.index in PLATE_ROUTE_INDICES and self.plate_facing_index == self.index:
                 if abs(angle_diff(gyaw, heading)) < 0.40:
                     self.get_logger().info('已正对：%s，等待连续检测确认' % name,
@@ -499,6 +636,9 @@ class TrafficLightRoute(Node):
                     return
                 self.plate_facing_index = None
             if abs(angle_diff(gyaw, heading)) < 0.22:
+                if self.index in PERSON_ROUTE_INDICES:
+                    self.handle_person_stop()
+                    return
                 if self.index in PLATE_ROUTE_INDICES:
                     self.plate_facing_index = self.index
                     self.get_logger().info('已正对：%s，等待连续检测确认' % name,
@@ -508,7 +648,9 @@ class TrafficLightRoute(Node):
                 self.index += 1
                 self.path = []
                 if self.index == len(ROUTE):
-                    self.get_logger().info('完成车牌打卡，回到起点，导航完成')
+                    self.get_logger().info('完成车牌与人偶识别，回到起点，导航完成')
+                    if self.person_final_text:
+                        self.get_logger().info(self.person_final_text)
                     self.exit_code = 0
                     self.finished = True
                 return

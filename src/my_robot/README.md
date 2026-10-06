@@ -7,7 +7,7 @@
 
 ## 0. 定位导航：依次通过两个红绿灯
 
-当前 `competition_world.sdf` 中，红绿灯 1 的通道中心在 `(4.0, 0.0)`，通道沿南北方向；红绿灯 2 的通道中心在 `(-2.0, 0.25)`，通道沿东西方向。闭环路线从 `(3.95, -4.0)` 朝北直行穿过第一个灯，到北端左转向西，再左转向南，在 `(1.05, 0.10)` 右转向西穿过第二个灯；到西端左转向南，沿车牌前横向白线北侧的车道，依次在 `(-4.0, -2.50)`、`(-2.6, -2.50)`、`(-1.2, -2.50)` 朝南正对三辆车。每处连续检测到车牌后至少停车观察 3 秒，并等待最多 10 秒确认文字，再前往下一处；三块均确认后横穿到东端，右转返回起点，不经过车牌前白线。每处还会读取车牌文字并把结果写入 CSV；连续 OCR 无法确认时标记为未确认。导航逐段读取 AMCL 位姿并调用 Nav2 `ComputePathToPose` 检查通路，沿指定车道中心行驶，避免规划器抄近路压线。场地原贴图把起点方框和车道完全封闭，`competition_world.sdf` 在其余必经白线上设有窄黑色通道；车牌前横向白线保持原样。这些通道只有视觉效果，不改变激光碰撞地图。
+当前 `competition_world.sdf` 中，红绿灯 1 的通道中心在 `(4.0, 0.0)`，通道沿南北方向；红绿灯 2 的通道中心在 `(-2.0, 0.25)`，通道沿东西方向。闭环路线从 `(3.95, -4.0)` 朝北直行穿过第一个灯，在 `(3.95, 2.20)` 面向西识别 A 立牌；到北端左转向西，再在 `(1.05, 2.20)` 面向西识别 B 立牌，随后向南，在 `(1.05, 0.10)` 右转向西穿过第二个灯；到西端左转向南，沿车牌前横向白线北侧的车道，依次在 `(-4.0, -2.50)`、`(-2.6, -2.50)`、`(-1.2, -2.50)` 朝南正对三辆车。每处连续检测到车牌后至少停车观察 3 秒，并等待最多 10 秒确认文字，再前往下一处；立牌与车牌识别结束后横穿到东端，右转返回起点，不经过车牌前白线。每处还会读取车牌文字并把结果写入 CSV；连续 OCR 无法确认时标记为未确认。导航逐段读取 AMCL 位姿并调用 Nav2 `ComputePathToPose` 检查通路，沿指定车道中心行驶，避免规划器抄近路压线。场地原贴图把起点方框和车道完全封闭，`competition_world.sdf` 在其余必经白线上设有窄黑色通道；车牌前横向白线保持原样。这些通道只有视觉效果，不改变激光碰撞地图。
 
 ```bash
 cd ~/ros2_ws
@@ -18,7 +18,7 @@ source .venv-plate/bin/activate
 ros2 launch my_robot bringup_navigation.launch.py
 ```
 
-首次克隆仓库时，先在工作区根目录创建虚拟环境并安装车牌识别依赖；`plate_detect.pt` 已包含在仓库中，无需另行下载：
+首次克隆仓库时，先在工作区根目录创建虚拟环境并安装识别依赖；`plate_detect.pt` 和 `person_yolov8n.pt` 已包含在仓库中，无需另行下载：
 
 ```bash
 cd ~/ros2_ws
@@ -28,11 +28,18 @@ python3 -m pip install -r src/my_robot/requirements-plate.txt \
   --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
-按 `start_command.txt` 启动时，三处车牌文字依次追加到 `log/ros/plate_results.csv`，包括站点、识别内容、确认状态和投票次数。场景当前三辆车共用同一张贴图，因此读到的号码应相同。
+按 `start_command.txt` 启动时，三处车牌文字依次追加到 `log/ros/plate_results.csv`，包括站点、识别内容、确认状态和投票次数。场景当前三辆车共用同一张贴图，因此读到的号码应相同。两个立牌的结果写入 `log/ros/person_results.csv`，并发布到 `/person_count/final`；当前场景中 A 为 4 人、B 为 5 人、总人数为 9 人。识别未确认时，CSV 的总人数留空。
+
+人数由相机图像中的人体检测框逐帧计数；路线在每块立牌前等待两次相同计数，不从贴图文件读取或写死人数。运行结束后查看 CSV；路线节点仍在运行时也可订阅最终结果话题：
+
+```bash
+cat log/ros/person_results.csv
+ros2 topic echo /person_count/final --once --qos-durability transient_local
+```
 
 一键启动默认同时打开 Gazebo 和 RViz，并自动运行路线。RViz 在 Gazebo 启动约 10 秒后由导航阶段打开。若当前终端的 `DISPLAY` 为空，在本机图形桌面使用 `DISPLAY=:0 ros2 launch my_robot bringup_navigation.launch.py gui:=true rviz:=true auto_route:=true`。
 
-2 核 / 4 GB 的 VMware 虚拟机默认采用轻量配置：使用可用的 `vmwgfx` OpenGL 加速；相机为 960×720、4 Hz，用于灯色与车牌文字识别；只启动定位、Nav2 路径规划器和速度平滑器；Gazebo 物理更新目标 500 Hz，RViz 目标帧率设为 45 FPS 且默认关闭 TF 可视化。RViz 用 `/map_obstacles` 点云显示地图占用栅格，绕开当前 VMware 驱动下 RViz Map 插件的 GLSL 着色器错误；AMCL 和 Nav2 仍直接使用原始 `/map`。这些配置写在启动文件、场景和 RViz 配置中，重启虚拟机后继续生效。GNOME 桌面动画也已关闭并持久保存。需要完整 Nav2 `NavigateToPose` 服务时加 `lite_nav:=false`；若 VMware 图形驱动异常，可在命令前加 `LIBGL_ALWAYS_SOFTWARE=1` 回退。
+2 核 / 4 GB 的 VMware 虚拟机默认采用轻量配置：使用可用的 `vmwgfx` OpenGL 加速；相机为 960×720、8 Hz，用于灯色、车牌文字和人偶立牌识别；车牌窗口按相机新帧刷新，YOLO 在后台按最新帧检测；只启动定位、Nav2 路径规划器和速度平滑器；Gazebo 物理更新目标 500 Hz，RViz 目标帧率设为 45 FPS 且默认关闭 TF 可视化。RViz 用 `/map_obstacles` 点云显示地图占用栅格，绕开当前 VMware 驱动下 RViz Map 插件的 GLSL 着色器错误；AMCL 和 Nav2 仍直接使用原始 `/map`。这些配置写在启动文件、场景和 RViz 配置中，重启虚拟机后继续生效。GNOME 桌面动画也已关闭并持久保存。需要完整 Nav2 `NavigateToPose` 服务时加 `lite_nav:=false`；若 VMware 图形驱动异常，可在命令前加 `LIBGL_ALWAYS_SOFTWARE=1` 回退。
 
 这一条启动命令会在终端输出 `[1/3]`、`[2/3]`、`[3/3]` 提示：
 
@@ -40,7 +47,7 @@ python3 -m pip install -r src/my_robot/requirements-plate.txt \
 |---|---|---|
 | 1 | Gazebo、`traffic_signal_plugin`、`robot_state_publisher`、`spawn_entity` | `/clock`、`/scan`、`/camera/image_raw`、`/odom`、两个灯的 `/traffic_light/lightN/state` |
 | 2 | `map_server`、`amcl`、`amcl_tf_bridge`、Nav2 `planner_server`、`velocity_smoother`、`map_obstacles_cloud`、RViz | `/map`、`/map_obstacles`、`/amcl_pose`、`map→odom`、`/compute_path_to_pose` |
-| 3 | `traffic_light_vision.py`、`plate_detect_cn.py`、`plate_recognize.py`、`navigate_traffic_lights.py` | 红黄灯停车、绿灯通行；依次正对三辆车检测车牌，每处确认后才继续；完成 14 个航点返回起点 |
+| 3 | `traffic_light_vision.py`、`plate_detect_cn.py`、`plate_recognize.py`、`person_count.py`、`navigate_traffic_lights.py` | 红黄灯停车、绿灯通行；分别识别两块立牌的人数，再依次识别三辆车的车牌；完成 16 个航点返回起点 |
 
 虚拟机省资源时用 `gui:=false rviz:=false`。只启动定位导航、不自动跑路时用 `auto_route:=false`；确认 `/amcl_pose` 后，在新终端运行：
 
@@ -61,9 +68,9 @@ ros2 launch my_robot navigation.launch.py
 ros2 run my_robot navigate_traffic_lights.py --ros-args -p use_sim_time:=true
 ```
 
-`amcl_tf_bridge` 先用配置中的初始位姿和 `/odom` 发布 `map→odom`，收到 `/amcl_pose` 后改用 AMCL 定位位姿持续刷新；这样启动时即使 AMCL 首次发布较早，也不会卡在等待 TF。当前 Humble 仿真中 AMCL 自带 TF 广播会在行驶中停止刷新，导致 Nav2 报 `Transform data too old`。配置中已关闭 AMCL 自带广播，避免同一 TF 出现两个发布者。
+`amcl_tf_bridge` 先用配置中的初始位姿和 `/odom` 发布 `map→odom`；每次收到 `/amcl_pose` 时固定该次定位对应的里程计位姿，并持续刷新 TF 时间戳。AMCL 暂时不更新时，`/odom` 仍可推进地图中的车体位姿，路线脚本也用里程计推算位姿继续导航；AMCL 和里程计都超时才停车。当前 Humble 仿真中 AMCL 自带 TF 广播会在行驶中停止刷新，导致 Nav2 报 `Transform data too old`。配置中已关闭 AMCL 自带广播，避免同一 TF 出现两个发布者。
 
-路线脚本的 `start_at` 参数可从指定航点恢复，取值 `0..13`，默认 `0`；仅在车已位于对应路段时使用。`speed` 默认 `0.18` m/s。每段有 Nav2 通路检查和车道偏离检查；激光在前方约 1.25 m 发现地图中没有的障碍时，先检查两侧是否有足够空间，再在路线中心左右最多约 0.38 m 内绕行；两侧不安全或距离小于 0.32 m 时停车，障碍移走后继续。绕行候选轨迹还会查询地面贴图的白线位置和场景里的黑色通行缺口，要求车体外缘与白线至少留约 0.03 m；无法满足就停车，因此不会为躲障碍去压车牌前白线。红绿灯插件在 Gazebo Classic 中按红 5 秒、黄 2 秒、绿 5 秒切换外观和状态话题；相机节点按灯架几何位置裁剪图像识别灯色。路线在灯前同时参考图像与仿真状态，冲突时停车，图像暂时看不见灯时使用状态话题。2026-10-01 双窗口配置测试完成 11/11 个航点并返回起点，两个红灯前均出现停车等待日志；在北向直线路段临时放入半径 0.07 m 的障碍后，记录到向左绕行并最终完成 11/11 航点。障碍突然出现在车前约 0.4 m 时，小车停车，移走障碍后继续。2026-09-30 无相机轻量配置的 `/clock` 实时率约 0.97、RViz 状态栏约 44 FPS；启用相机和灯色识别后负载会提高，实际数值随宿主机变化。
+路线脚本的 `start_at` 参数可从指定航点恢复，取值 `0..15`，默认 `0`；仅在车已位于对应路段时使用。`speed` 默认 `0.18` m/s。每段有 Nav2 通路检查和车道偏离检查；激光在前方约 1.25 m 发现地图中没有的障碍时，先检查两侧是否有足够空间，再在路线中心左右最多约 0.38 m 内绕行；两侧不安全或距离小于 0.32 m 时停车，障碍移走后继续。绕行候选轨迹还会查询地面贴图的白线位置和场景里的黑色通行缺口，要求车体外缘与白线至少留约 0.03 m；无法满足就停车，因此不会为躲障碍去压车牌前白线。红绿灯插件在 Gazebo Classic 中按红 5 秒、黄 2 秒、绿 5 秒切换外观和状态话题；相机节点按灯架几何位置裁剪图像识别灯色。路线在灯前同时参考图像与仿真状态，冲突时停车，图像暂时看不见灯时使用状态话题。2026-10-01 双窗口配置测试完成 11/11 个航点并返回起点，两个红灯前均出现停车等待日志；在北向直线路段临时放入半径 0.07 m 的障碍后，记录到向左绕行并最终完成 11/11 航点。障碍突然出现在车前约 0.4 m 时，小车停车，移走障碍后继续。2026-09-30 无相机轻量配置的 `/clock` 实时率约 0.97、RViz 状态栏约 44 FPS；启用相机和灯色识别后负载会提高，实际数值随宿主机变化。
 
 定位与导航自检：
 
@@ -207,7 +214,7 @@ odom ──(diff_drive 插件)──> base_footprint ──(固定关节)──>
 | 发布 | `/odom` | `nav_msgs/Odometry` | 同上（含 `odom→base_footprint` TF） |
 | 发布 | `/joint_states` | `sensor_msgs/JointState` | `libgazebo_ros_joint_state_publisher.so` |
 | 发布 | `/scan` | `sensor_msgs/LaserScan` | `libgazebo_ros_ray_sensor.so`（360 线，10 Hz，0.05–12 m） |
-| 发布 | `/camera/image_raw`, `/camera/camera_info` | `sensor_msgs/Image`, `CameraInfo` | `libgazebo_ros_camera.so`（960×720，4 Hz） |
+| 发布 | `/camera/image_raw`, `/camera/camera_info` | `sensor_msgs/Image`, `CameraInfo` | `libgazebo_ros_camera.so`（960×720，8 Hz） |
 | 发布 | `/robot_description`, TF | `std_msgs/String`, `tf2_msgs/TFMessage` | `robot_state_publisher` |
 
 自检命令：
@@ -295,7 +302,7 @@ python3 $P/tools/grab_image.py /camera/image_raw /tmp/robot_cam.png
 | 前进 | `/cmd_vel.linear.x=0.1` → 4 s 位移 0.47 m，`/odom` 同步 |
 | 转向 | `/cmd_vel.angular.z=0.5` → 3 s 后 yaw +2.41 rad（逆时针，方向正确） |
 | 激光 | `/scan` 约 9.9 Hz，360 线，`angle_min=-π`、`angle_max=+π`、`range_max=12` |
-| 相机 | 自动导航为 `/camera/image_raw` 960×720 rgb8、4 Hz，`/camera/camera_info` 正常；相机向上倾约 23° |
+| 相机 | 自动导航为 `/camera/image_raw` 960×720 rgb8、8 Hz，`/camera/camera_info` 正常；相机向上倾约 23° |
 | TF | `odom → base_footprint → {base_link, left/right_wheel_link, lidar_link, camera_link}` |
 
 两个踩过的坑（代码里都有注释）：

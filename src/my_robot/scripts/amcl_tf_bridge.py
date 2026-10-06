@@ -33,6 +33,7 @@ class AmclTfBridge(Node):
         self.amcl_pose.orientation.z = math.sin(initial_yaw / 2)
         self.amcl_pose.orientation.w = math.cos(initial_yaw / 2)
         self.odom_pose = None
+        self.odom_at_amcl = None
         self.broadcaster = TransformBroadcaster(self)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose',
                                  self.on_amcl_pose, 10)
@@ -42,15 +43,21 @@ class AmclTfBridge(Node):
 
     def on_amcl_pose(self, msg):
         self.amcl_pose = msg.pose.pose
+        # Keep the odometry pose from this localization update. Recomputing
+        # map->odom against every newer odom message would pin the robot to
+        # the last AMCL position whenever AMCL temporarily stops publishing.
+        self.odom_at_amcl = self.odom_pose
 
     def on_odom(self, msg):
         self.odom_pose = msg.pose.pose
+        if self.odom_at_amcl is None:
+            self.odom_at_amcl = self.odom_pose
 
     def broadcast(self):
-        if self.odom_pose is None:
+        if self.odom_at_amcl is None:
             return
         map_pose = self.amcl_pose
-        odom_pose = self.odom_pose
+        odom_pose = self.odom_at_amcl
         yaw = yaw_of(map_pose.orientation) - yaw_of(odom_pose.orientation)
         cosine, sine = math.cos(yaw), math.sin(yaw)
         ox, oy = odom_pose.position.x, odom_pose.position.y

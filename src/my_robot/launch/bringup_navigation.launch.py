@@ -26,7 +26,7 @@ def generate_launch_description():
         DeclareLaunchArgument('lite_nav', default_value='true',
                               description='自动路线只启动 Nav2 规划器和速度平滑器'),
         DeclareLaunchArgument('enable_camera', default_value='true',
-                              description='开启低分辨率相机用于红绿灯图像识别'),
+                              description='开启相机用于红绿灯、立牌人数与车牌识别'),
         DeclareLaunchArgument('map', default_value=os.path.join(
             get_package_share_directory('my_robot'), 'maps', 'competition_nav_map.yaml')),
         # Included launch files share configuration in Humble. Preserve the
@@ -43,7 +43,7 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(os.path.join(launch_dir, 'navigation.launch.py')),
                 launch_arguments={'map': map_file, 'rviz': nav_rviz,
                                   'lite_nav': lite_nav}.items()),
-            LogInfo(msg='[3/3] 自动路线 + 相机灯色识别 + 激光动态避障：绿灯通行，红黄灯停车',
+            LogInfo(msg='[3/3] 自动路线 + 灯色、立牌人数与车牌识别 + 激光动态避障',
                     condition=IfCondition(auto_route)),
             LogInfo(msg='[3/3] 自动路线已关闭；定位与 Nav2 已启动',
                     condition=UnlessCondition(auto_route)),
@@ -53,14 +53,16 @@ def generate_launch_description():
             Node(package='my_robot', executable='traffic_light_vision.py',
                  name='traffic_light_vision', output='screen',
                  parameters=[{'use_sim_time': True}], condition=IfCondition(auto_route)),
-            # ========== 新增车牌识别节点 ==========
+            # 相机识别节点
             Node(package='my_robot', executable='plate_detect_cn.py',
                  name='plate_detect_cn', output='screen',
                  parameters=[{'use_sim_time': True}]),
             Node(package='my_robot', executable='plate_recognize.py',
                  name='plate_recognizer', output='screen',
                  parameters=[{'use_sim_time': True}], condition=IfCondition(enable_camera)),
-            # ======================================
+            Node(package='my_robot', executable='person_count.py',
+                 name='person_counter', output='screen',
+                 parameters=[{'use_sim_time': True}], condition=IfCondition(enable_camera)),
         ]),
         LogInfo(msg='[操作] 手动路线：source install/local_setup.bash；ros2 run my_robot navigate_traffic_lights.py --ros-args -p use_sim_time:=true',
                 condition=UnlessCondition(auto_route)),

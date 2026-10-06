@@ -47,7 +47,7 @@ class PlateRecognizer(Node):
         super().__init__('plate_recognizer')
         self.bridge = CvBridge()
         self.ocr = RapidOCR()
-        self.latest_image = None
+        self.latest_image_msg = None
         self.latest_image_ns = 0
         self.last_ocr_ns = 0
         self.plate_pub = self.create_publisher(String, '/plate_text', 10)
@@ -57,18 +57,20 @@ class PlateRecognizer(Node):
         self.get_logger().info('车牌文字识别已启动，结果发布到 /plate_text')
 
     def image_callback(self, msg):
-        try:
-            self.latest_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            self.latest_image_ns = self.get_clock().now().nanoseconds
-        except Exception as exc:
-            self.get_logger().warn(f'车牌识别图像转换失败：{exc}', throttle_duration_sec=5.0)
+        self.latest_image_msg = msg
+        self.latest_image_ns = self.get_clock().now().nanoseconds
 
     def box_callback(self, msg):
         now_ns = self.get_clock().now().nanoseconds
-        if (self.latest_image is None or now_ns - self.latest_image_ns > 1_000_000_000
+        if (self.latest_image_msg is None or now_ns - self.latest_image_ns > 1_000_000_000
                 or now_ns - self.last_ocr_ns < 350_000_000):
             return
-        crop = crop_plate(self.latest_image, msg.data)
+        try:
+            image = self.bridge.imgmsg_to_cv2(self.latest_image_msg, desired_encoding='bgr8')
+        except Exception as exc:
+            self.get_logger().warn(f'车牌识别图像转换失败：{exc}', throttle_duration_sec=5.0)
+            return
+        crop = crop_plate(image, msg.data)
         if crop is None:
             return
         self.last_ocr_ns = now_ns

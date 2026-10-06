@@ -25,6 +25,7 @@ install(PROGRAMS
   scripts/traffic_light_vision.py
   scripts/plate_recognize.py
   scripts/plate_detect_cn.py
+  scripts/person_count.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
