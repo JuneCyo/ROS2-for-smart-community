@@ -17,9 +17,9 @@ class TrafficTimerNode(Node):
         self.l2_yellow = "traffic_light2::light_yellow::yellow_vis"
         self.l2_green = "traffic_light2::light_green::green_vis"
 
-        # 红灯 5 秒，黄灯 2 秒，绿灯 5 秒。
+        # 与 Gazebo Classic 插件保持相同的红、绿、黄周期。
         self.state = 0
-        self.durations = [5.0, 2.0, 5.0]
+        self.durations = [10.0, 15.0, 3.0]
 
         self.set_all_lights(
             l1_red=[1,0,0,1], l1_yellow=[0,0,0,1], l1_green=[0,0,0,1],
@@ -55,15 +55,15 @@ class TrafficTimerNode(Node):
                 [1,0,0,1],[0,0,0,1],[0,0,0,1],
                 [1,0,0,1],[0,0,0,1],[0,0,0,1]
             )
-        elif self.state ==1:
-            self.set_all_lights(
-                [0,0,0,1],[1,1,0,1],[0,0,0,1],
-                [0,0,0,1],[1,1,0,1],[0,0,0,1]
-            )
-        elif self.state ==2:
+        elif self.state == 1:
             self.set_all_lights(
                 [0,0,0,1],[0,0,0,1],[0,1,0,1],
                 [0,0,0,1],[0,0,0,1],[0,1,0,1]
+            )
+        elif self.state == 2:
+            self.set_all_lights(
+                [0,0,0,1],[1,1,0,1],[0,0,0,1],
+                [0,0,0,1],[1,1,0,1],[0,0,0,1]
             )
         self.timer = self.create_timer(self.durations[self.state], self.timer_callback)
 

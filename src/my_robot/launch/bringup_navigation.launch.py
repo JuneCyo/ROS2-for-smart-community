@@ -27,6 +27,8 @@ def generate_launch_description():
                               description='自动路线只启动 Nav2 规划器和速度平滑器'),
         DeclareLaunchArgument('enable_camera', default_value='true',
                               description='开启相机用于红绿灯、立牌人数与车牌识别'),
+        DeclareLaunchArgument('lighting', default_value='normal',
+                              description='Gazebo 场景光照：normal、dim 或 bright'),
         DeclareLaunchArgument('map', default_value=os.path.join(
             get_package_share_directory('my_robot'), 'maps', 'competition_nav_map.yaml')),
         # Humble 共享子启动文件的配置；先保存 RViz 参数，避免被 Gazebo 覆盖。
@@ -35,6 +37,7 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(launch_dir, 'gazebo.launch.py')),
             launch_arguments={'gui': gui, 'rviz': 'false',
+                              'lighting': LaunchConfiguration('lighting'),
                               'enable_camera': enable_camera}.items()),
         TimerAction(period=10.0, actions=[
             LogInfo(msg='[2/3] map_server + AMCL + Nav2 + RViz: 启动定位和路径规划'),

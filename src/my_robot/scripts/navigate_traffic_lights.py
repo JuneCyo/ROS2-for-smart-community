@@ -71,7 +71,7 @@ class TrafficLightRoute(Node):
     def __init__(self):
         super().__init__('navigate_traffic_lights')
         self.declare_parameter('start_at', 0)
-        self.declare_parameter('speed', 0.18)
+        self.declare_parameter('speed', 0.38)
         self.declare_parameter('plate_results_file', os.path.join(
             os.environ.get('ROS_LOG_DIR', os.getcwd()), 'plate_results.csv'))
         self.declare_parameter('person_results_file', os.path.join(
@@ -652,8 +652,8 @@ class TrafficLightRoute(Node):
                     self.finished = True
                 return
             command = Twist()
-            # 降低转向增益，避免在目标角度附近来回摆动。
-            command.angular.z = max(-0.8, min(0.8, 0.8 * angle_diff(gyaw, heading)))
+            # 靠近航点时限速转向，避免越过目标角度。
+            command.angular.z = max(-1.1, min(1.1, 1.2 * angle_diff(gyaw, heading)))
             self.pub.publish(command)
             return
         if not self.path:
@@ -683,13 +683,13 @@ class TrafficLightRoute(Node):
         if self.front_distance() < 0.32:
             self.get_logger().warn('前方障碍过近，停车等待', throttle_duration_sec=2.0)
         elif abs(error) > 0.45:
-            command.angular.z = max(-0.75, min(0.75, 1.8 * error))
+            command.angular.z = max(-1.1, min(1.1, 1.8 * error))
         else:
             command.linear.x = min(self.speed, max(0.06, 0.7 * distance_to_goal))
             if light_id is not None and gate_progress < 0 and self.light_state(light_id - 1) != 'green':
                 command.linear.x = min(command.linear.x, 0.08)
             command.linear.x *= max(0.35, 1.0 - abs(error))
-            command.angular.z = max(-0.75, min(0.75, 1.8 * error))
+            command.angular.z = max(-1.1, min(1.1, 1.8 * error))
         self.pub.publish(command)
 
 def main():

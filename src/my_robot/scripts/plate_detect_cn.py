@@ -15,6 +15,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 from ultralytics import YOLO
+from vision_lighting import enhance_lighting
 
 
 WINDOW_NAME = 'cn_plate_view'
@@ -100,7 +101,7 @@ class PlateDetectCNNode(Node):
             last_frame_seq = frame_seq
             next_inference = time.monotonic() + DETECTION_PERIOD
             try:
-                boxes, selected = detect_plates(self.model, frame)
+                boxes, selected = detect_plates(self.model, enhance_lighting(frame))
             except Exception as exc:
                 self.get_logger().warn(f'车牌检测失败：{exc}', throttle_duration_sec=5.0)
                 continue

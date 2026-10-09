@@ -27,6 +27,9 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(FILES scripts/vision_lighting.py DESTINATION lib/${PROJECT_NAME})
+install(FILES LIGHTING.md DESTINATION share/${PROJECT_NAME})
+
 
 # 配置阶段还查不到本包，xacro 必须等安装后再运行。
 # 安装后可检查:
@@ -34,4 +37,3 @@ install(PROGRAMS
 #   gz sdf -p /tmp/my_robot.urdf > /dev/null && echo "URDF OK"
 
 ament_package()
-

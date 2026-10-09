@@ -15,11 +15,13 @@ def generate_launch_description():
 
     declare_gui = DeclareLaunchArgument('gui', default_value='false')
     declare_auto_survey = DeclareLaunchArgument('auto_survey', default_value='true')
+    declare_lighting = DeclareLaunchArgument('lighting', default_value='normal')
 
     # RViz 由 Gazebo 启动文件统一打开，避免重复实例。
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(pkg_share, 'launch', 'gazebo.launch.py')),
-        launch_arguments={'gui': LaunchConfiguration('gui'), 'rviz': 'true'}.items()
+        launch_arguments={'gui': LaunchConfiguration('gui'), 'rviz': 'true',
+                          'lighting': LaunchConfiguration('lighting')}.items()
     )
 
     display = IncludeLaunchDescription(
@@ -43,9 +45,9 @@ def generate_launch_description():
     return LaunchDescription([
         declare_gui,
         declare_auto_survey,
+        declare_lighting,
         gazebo,
         display,
         carto,
         survey
     ])
-

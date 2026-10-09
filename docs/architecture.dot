@@ -1,0 +1,27 @@
+digraph architecture {
+  graph [rankdir=LR, bgcolor="white", pad="0.18", nodesep="0.32", ranksep="0.55", fontname="Noto Sans CJK SC"];
+  node [shape=box, style="rounded,filled", fillcolor="#EFF5FA", color="#6B8193", fontname="Noto Sans CJK SC", fontsize=11, margin="0.11,0.08"];
+  edge [color="#607A90", fontname="Noto Sans CJK SC", fontsize=9, arrowsize=0.7];
+  world [label="Gazebo Classic\n场景与差速底盘", fillcolor="#E5F0FA"];
+  sensors [label="激光 /scan\n相机 /camera/image_raw\n里程计 /odom"];
+  map [label="map_server\n静态栅格 /map"];
+  amcl [label="AMCL + TF 桥接\n/map→/odom→base_footprint"];
+  planner [label="Nav2 planner_server\nComputePathToPose"];
+  route [label="巡检路线节点\n16 航点、灯控、避障"];
+  vision [label="灯色 HSV\n人偶 YOLO\n车牌 YOLO + RapidOCR"];
+  smoother [label="velocity_smoother\n/cmd_vel_nav→/cmd_vel"];
+  result [label="识别结果\nCSV + ROS 话题", fillcolor="#EAF5EB"];
+  world -> sensors;
+  sensors -> amcl [label="scan / odom"];
+  map -> amcl;
+  map -> planner;
+  amcl -> planner;
+  amcl -> route;
+  planner -> route [label="通路检查"];
+  sensors -> route [label="scan"];
+  sensors -> vision [label="image"];
+  vision -> route [label="状态 / 检测 / 文字"];
+  route -> smoother;
+  smoother -> world;
+  route -> result;
+}

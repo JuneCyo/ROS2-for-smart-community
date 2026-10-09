@@ -11,6 +11,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Int32MultiArray, String
 from ultralytics import YOLO
+from vision_lighting import enhance_lighting
 
 
 BOARD_IDS = {'A': 1, 'B': 2}
@@ -63,7 +64,7 @@ class PersonCounter(Node):
         self.last_inference_ns = now_ns
         try:
             image = self.bridge.imgmsg_to_cv2(self.latest_image_msg, desired_encoding='bgr8')
-            count = count_people(self.model, image)
+            count = count_people(self.model, enhance_lighting(image))
         except Exception as exc:
             self.get_logger().warn(f'人偶识别失败：{exc}', throttle_duration_sec=5.0)
             return

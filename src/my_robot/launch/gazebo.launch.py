@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 """启动竞赛场地、机器人状态发布器和 Gazebo 中的机器人。"""
 import os
+import tempfile
+import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
-                            IncludeLaunchDescription, SetEnvironmentVariable,
+                            IncludeLaunchDescription, OpaqueFunction, SetEnvironmentVariable,
                             TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -26,6 +28,39 @@ def _share(pkg):
         return None
 
 
+def _lighting_world(world_path, lighting):
+    if lighting == 'normal':
+        return world_path
+    levels = {
+        'dim': ('0.12 0.12 0.12 1', '0.25 0.25 0.25 1'),
+        'bright': ('0.75 0.75 0.75 1', '1 1 1 1'),
+    }
+    if lighting not in levels:
+        raise ValueError(f'未知光照模式 {lighting!r}；可选 normal、dim、bright')
+    tree = ET.parse(world_path)
+    ambient = tree.find('.//world/scene/ambient')
+    sun = tree.find(".//world/light[@name='sun']/diffuse")
+    if ambient is None or sun is None:
+        raise ValueError(f'场景缺少环境光或 sun 光源：{world_path}')
+    ambient.text, sun.text = levels[lighting]
+    with tempfile.NamedTemporaryFile(prefix=f'my_robot_{lighting}_', suffix='.sdf',
+                                     delete=False) as output:
+        tree.write(output, encoding='utf-8', xml_declaration=True)
+        return output.name
+
+
+def _start_gzserver(context, gazebo_ros_share):
+    world_path = LaunchConfiguration('world').perform(context)
+    lighting = LaunchConfiguration('lighting').perform(context)
+    selected_world = _lighting_world(world_path, lighting)
+    return [IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(gazebo_ros_share, 'launch',
+                                                   'gzserver.launch.py')),
+        launch_arguments={'world': selected_world,
+                          'verbose': LaunchConfiguration('verbose'),
+                          'init': 'true', 'factory': 'true'}.items())]
+
+
 def generate_launch_description():
     pkg_share = get_package_share_directory('my_robot')
     sc_share = _share('smart_community')
@@ -41,6 +76,8 @@ def generate_launch_description():
     declared = [
         DeclareLaunchArgument('world', default_value=default_world,
                               description='Gazebo world 文件'),
+        DeclareLaunchArgument('lighting', default_value='normal',
+                              description='场景光照：normal、dim 或 bright'),
         # 默认位置在场地东南角的白线方框内。
         DeclareLaunchArgument('x', default_value='3.95',
                               description='机器人起始 x (白线方框中心)'),
@@ -58,13 +95,11 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_camera', default_value='true', description='是否装相机'),
     ]
 
-    world = LaunchConfiguration('world')
     x = LaunchConfiguration('x')
     y = LaunchConfiguration('y')
     z = LaunchConfiguration('z')
     yaw = LaunchConfiguration('yaw')
     gui = LaunchConfiguration('gui')
-    verbose = LaunchConfiguration('verbose')
     rviz = LaunchConfiguration('rviz')
     use_sim_time = LaunchConfiguration('use_sim_time')
     spawn_delay = LaunchConfiguration('spawn_delay')
@@ -118,14 +153,7 @@ def generate_launch_description():
                      'use_sim_time': use_sim_time}],
     )
 
-    start_gzserver = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(gazebo_ros_share, 'launch', 'gzserver.launch.py')),
-        launch_arguments={'world': world,
-                          'verbose': verbose,
-                          'init': 'true',      # 提供 /clock
-                          'factory': 'true'}.items(),  # 提供 /spawn_entity
-    )
+    start_gzserver = OpaqueFunction(function=_start_gzserver, args=[gazebo_ros_share])
     start_gzclient = ExecuteProcess(
         cmd=['gzclient'],
         output='screen',

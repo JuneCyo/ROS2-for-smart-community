@@ -12,6 +12,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray, String
+from vision_lighting import enhance_lighting
 
 
 PROVINCES = '京沪津渝冀晋蒙辽吉黑苏浙皖闽赣鲁豫鄂湘粤桂琼川贵云藏陕甘青宁新'
@@ -76,19 +77,25 @@ class PlateRecognizer(Node):
         self.last_ocr_ns = now_ns
         scale = max(1, min(8, math.ceil(240 / crop.shape[1])))
         enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        try:
-            result = self.ocr(enlarged, use_det=False, use_cls=False)
-        except Exception as exc:
-            self.get_logger().warn(f'车牌 OCR 失败：{exc}', throttle_duration_sec=5.0)
-            return
-        if not result.txts or not result.scores:
-            return
-        plate_text = normalize_plate(result.txts[0])
-        if plate_text is None or result.scores[0] < 0.75:
-            return
-        self.plate_pub.publish(String(data=plate_text))
-        self.get_logger().info(f'读到车牌：{plate_text}，OCR 置信度 {result.scores[0]:.2f}',
-                               throttle_duration_sec=5.0)
+        corrected = enhance_lighting(enlarged)
+        variants = (corrected, enlarged) if corrected is not enlarged else (
+            enlarged, enhance_lighting(enlarged, force=True))
+        for variant in variants:
+            try:
+                result = self.ocr(variant, use_det=False, use_cls=False)
+            except Exception as exc:
+                self.get_logger().warn(f'车牌 OCR 失败：{exc}', throttle_duration_sec=5.0)
+                continue
+            texts = result.txts if result.txts is not None else ()
+            scores = result.scores if result.scores is not None else ()
+            for text, score in zip(texts, scores):
+                plate_text = normalize_plate(text)
+                if plate_text is None or score < 0.75:
+                    continue
+                self.plate_pub.publish(String(data=plate_text))
+                self.get_logger().info(f'读到车牌：{plate_text}，OCR 置信度 {score:.2f}',
+                                       throttle_duration_sec=5.0)
+                return
 
 
 def main(args=None):

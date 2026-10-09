@@ -15,6 +15,11 @@
 
 namespace gazebo
 {
+constexpr double kRedSeconds = 10.0;
+constexpr double kGreenSeconds = 15.0;
+constexpr double kYellowSeconds = 3.0;
+constexpr double kCycleSeconds = kRedSeconds + kGreenSeconds + kYellowSeconds;
+
 class TrafficSignalPlugin : public WorldPlugin
 {
 public:
@@ -30,7 +35,7 @@ public:
     visual_pub_ = gz_node_->Advertise<msgs::Visual>("~/visual");
     update_connection_ = event::Events::ConnectWorldUpdateBegin(
       std::bind(&TrafficSignalPlugin::OnUpdate, this));
-    RCLCPP_INFO(ros_node_->get_logger(), "Gazebo Classic 红绿灯已启动：红 10 秒、黄 5 秒、绿 10 秒");
+    RCLCPP_INFO(ros_node_->get_logger(), "Gazebo Classic 红绿灯已启动：红 10 秒、绿 15 秒、黄 3 秒");
   }
 
 private:
@@ -39,9 +44,10 @@ private:
     const double now = world_->SimTime().Double();
     if (now - last_update_ < 0.5) return;
     last_update_ = now;
-    const double phase = std::fmod(now, 25.0);
-    const int state = phase < 10.0 ? 0 : (phase < 15.0 ? 1 : 2);
-    static const std::array<std::string, 3> names{{"red", "yellow", "green"}};
+    const double phase = std::fmod(now, kCycleSeconds);
+    const int state = phase < kRedSeconds ? 0 :
+                      (phase < kRedSeconds + kGreenSeconds ? 1 : 2);
+    static const std::array<std::string, 3> names{{"red", "green", "yellow"}};
     for (int i = 0; i < 2; ++i) {
       auto model = world_->ModelByName("traffic_light" + std::to_string(i + 1));
       if (!model) continue;
@@ -54,7 +60,7 @@ private:
         msgs::Visual visual = link->Visuals().begin()->second;
         const auto off = ignition::math::Color(0.025, 0.025, 0.025, 1.0);
         static const std::array<ignition::math::Color, 3> on{{
-          {1.0, 0.02, 0.02, 1.0}, {1.0, 0.7, 0.0, 1.0}, {0.02, 1.0, 0.02, 1.0}}};
+          {1.0, 0.02, 0.02, 1.0}, {0.02, 1.0, 0.02, 1.0}, {1.0, 0.7, 0.0, 1.0}}};
         const auto & c = color == state ? on[color] : off;
         msgs::Set(visual.mutable_material()->mutable_ambient(), c);
         msgs::Set(visual.mutable_material()->mutable_diffuse(), c);

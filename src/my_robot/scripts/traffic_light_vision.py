@@ -10,6 +10,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
+from vision_lighting import enhance_lighting
 
 
 LIGHTS = ((4.0, 0.0), (-2.0, 0.25))
@@ -42,19 +43,20 @@ def detect_lamp(image, x, y, yaw, light_id):
     y0, y1 = max(0, int(v - half_height)), min(height, int(v + half_height))
     if x1 - x0 < 8 or y1 - y0 < 8:
         return 'unknown'
-    hsv = cv2.cvtColor(image[y0:y1, x0:x1], cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(enhance_lighting(image[y0:y1, x0:x1]), cv2.COLOR_BGR2HSV)
     masks = {
-        'red': cv2.inRange(hsv, (0, 145, 125), (10, 255, 255)) |
-               cv2.inRange(hsv, (170, 145, 125), (179, 255, 255)),
-        'yellow': cv2.inRange(hsv, (16, 145, 125), (36, 255, 255)),
-        'green': cv2.inRange(hsv, (37, 145, 125), (90, 255, 255)),
+        'red': cv2.inRange(hsv, (0, 110, 65), (10, 255, 255)) |
+               cv2.inRange(hsv, (170, 110, 65), (179, 255, 255)),
+        'yellow': cv2.inRange(hsv, (16, 110, 65), (36, 255, 255)),
+        'green': cv2.inRange(hsv, (37, 110, 65), (90, 255, 255)),
     }
+    max_disc_size = max(45, int(1.7 * fx * 0.26 / camera_forward))
     scores = {}
     for name, mask in masks.items():
         count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
         scores[name] = max((stats[i, cv2.CC_STAT_AREA] for i in range(1, count)
-                            if 2 <= stats[i, cv2.CC_STAT_WIDTH] <= 45 and
-                            2 <= stats[i, cv2.CC_STAT_HEIGHT] <= 45), default=0)
+                            if 2 <= stats[i, cv2.CC_STAT_WIDTH] <= max_disc_size and
+                            2 <= stats[i, cv2.CC_STAT_HEIGHT] <= max_disc_size), default=0)
     color = max(scores, key=scores.get)
     return color if scores[color] >= 7 else 'unknown'
 
