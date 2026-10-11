@@ -30,6 +30,8 @@ python3 -m pip install -r src/my_robot/requirements-plate.txt \
   --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
+人偶和车牌的标注图像、训练与验证划分、训练参数及验证结果见 [`datasets/competition_vision`](datasets/competition_vision/README.md)。在该目录运行 `python3 validate_dataset.py` 可核对图像和标签，运行 `python3 evaluate.py` 可用当前运行权重重算检测框指标；微调命令和数据来源也写在该目录的说明中。
+
 按 `start_command.txt` 启动时，三处车牌文字依次追加到 `log/ros/plate_results.csv`，包括站点、识别内容、确认状态和投票次数。场景当前三辆车共用同一张贴图，因此读到的号码应相同。两个立牌的结果写入 `log/ros/person_results.csv`，并发布到 `/person_count/final`；当前场景中 A 为 4 人、B 为 5 人、总人数为 9 人。识别未确认时，CSV 的总人数留空。
 
 人数由相机图像中的人体检测框逐帧计数；路线在每块立牌前等待两次相同计数，不从贴图文件读取或写死人数。运行结束后查看 CSV；路线节点仍在运行时也可订阅最终结果话题：
@@ -41,7 +43,9 @@ ros2 topic echo /person_count/final --once --qos-durability transient_local
 
 一键启动默认同时打开 Gazebo 和 RViz，并自动运行路线。RViz 在 Gazebo 启动约 10 秒后由导航阶段打开。若当前终端的 `DISPLAY` 为空，在本机图形桌面使用 `DISPLAY=:0 ros2 launch my_robot bringup_navigation.launch.py gui:=true rviz:=true auto_route:=true`。
 
-2 核 / 4 GB 的 VMware 虚拟机默认采用轻量配置：使用可用的 `vmwgfx` OpenGL 加速；相机为 960×720、8 Hz，用于灯色、车牌文字和人偶立牌识别；车牌窗口按相机新帧刷新，YOLO 在后台按最新帧检测；只启动定位、Nav2 路径规划器和速度平滑器；Gazebo 物理更新目标 500 Hz，RViz 目标帧率设为 45 FPS 且默认关闭 TF 可视化。RViz 用 `/map_obstacles` 点云显示地图占用栅格，绕开当前 VMware 驱动下 RViz Map 插件的 GLSL 着色器错误；AMCL 和 Nav2 仍直接使用原始 `/map`。这些配置写在启动文件、场景和 RViz 配置中，重启虚拟机后继续生效。GNOME 桌面动画也已关闭并持久保存。需要完整 Nav2 `NavigateToPose` 服务时加 `lite_nav:=false`；若 VMware 图形驱动异常，可在命令前加 `LIBGL_ALWAYS_SOFTWARE=1` 回退。
+2 核 / 4 GB 的 VMware 虚拟机默认采用轻量配置：使用可用的 `vmwgfx` OpenGL 加速；相机为 768×576、目标 25 Hz，用于灯色、车牌文字和人偶立牌识别；车牌窗口按相机新帧刷新，YOLO 在后台按最新帧检测，文字识别直接使用检测时的同帧车牌裁图。Gazebo 实际帧率受虚拟机图形与 CPU 负载限制；本机测试中，自动路线车牌路段收到约 6–9 帧/秒，单独停在车牌前收到约 10–13 帧/秒。启动时只运行定位、Nav2 路径规划器和速度平滑器；Gazebo 物理更新目标 500 Hz，RViz 目标帧率设为 45 FPS 且默认关闭 TF 可视化。RViz 用 `/map_obstacles` 点云显示地图占用栅格，绕开当前 VMware 驱动下 RViz Map 插件的 GLSL 着色器错误；AMCL 和 Nav2 仍直接使用原始 `/map`。这些配置写在启动文件、场景和 RViz 配置中，重启虚拟机后继续生效。GNOME 桌面动画也已关闭并持久保存。需要完整 Nav2 `NavigateToPose` 服务时加 `lite_nav:=false`；若 VMware 图形驱动异常，可在命令前加 `LIBGL_ALWAYS_SOFTWARE=1` 回退。
+
+车牌检测和文字识别节点在场景启动时就加载；自动路线经过 A、B 立牌时，车牌检测暂停推理，B 站结束后再开启。人偶模型收到首帧相机图像时先完成一次推理准备，避免把首次推理时间留到 A 站停车后。单独启动车牌检测节点时默认立即检测；不显示车牌窗口的仿真测试可加 `plate_gui:=false`。
 
 这一条启动命令会在终端输出 `[1/3]`、`[2/3]`、`[3/3]` 提示：
 
@@ -157,7 +161,7 @@ odom ──(diff_drive 插件)──> base_footprint ──(固定关节)──>
 | 发布 | `/odom` | `nav_msgs/Odometry` | 同上（含 `odom→base_footprint` TF） |
 | 发布 | `/joint_states` | `sensor_msgs/JointState` | `libgazebo_ros_joint_state_publisher.so` |
 | 发布 | `/scan` | `sensor_msgs/LaserScan` | `libgazebo_ros_ray_sensor.so`（360 线，10 Hz，0.05–12 m） |
-| 发布 | `/camera/image_raw`, `/camera/camera_info` | `sensor_msgs/Image`, `CameraInfo` | `libgazebo_ros_camera.so`（960×720，8 Hz） |
+| 发布 | `/camera/image_raw`, `/camera/camera_info` | `sensor_msgs/Image`, `CameraInfo` | `libgazebo_ros_camera.so`（768×576，目标 25 Hz） |
 | 发布 | `/robot_description`, TF | `std_msgs/String`, `tf2_msgs/TFMessage` | `robot_state_publisher` |
 
 自检命令：
@@ -245,7 +249,7 @@ python3 $P/tools/grab_image.py /camera/image_raw /tmp/robot_cam.png
 | 前进 | `/cmd_vel.linear.x=0.1` → 4 s 位移 0.47 m，`/odom` 同步 |
 | 转向 | `/cmd_vel.angular.z=0.5` → 3 s 后 yaw +2.41 rad（逆时针，方向正确） |
 | 激光 | `/scan` 约 9.9 Hz，360 线，`angle_min=-π`、`angle_max=+π`、`range_max=12` |
-| 相机 | 自动导航为 `/camera/image_raw` 960×720 rgb8、8 Hz，`/camera/camera_info` 正常；相机向上倾约 23° |
+| 相机 | 自动导航为 `/camera/image_raw` 768×576 rgb8、目标 25 Hz，`/camera/camera_info` 正常；相机向上倾约 23° |
 | TF | `odom → base_footprint → {base_link, left/right_wheel_link, lidar_link, camera_link}` |
 
 两个踩过的坑（代码里都有注释）：

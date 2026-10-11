@@ -123,6 +123,9 @@ def build():
         i += 1
         if not line:
             continue
+        if line == '<!-- pagebreak -->':
+            doc.add_page_break()
+            continue
         if line.startswith('```'):
             block = []
             while i < len(lines) and not lines[i].startswith('```'):

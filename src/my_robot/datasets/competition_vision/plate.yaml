@@ -1,0 +1,4 @@
+train: plate/images/train
+val: plate/images/val
+names:
+  0: license_plate

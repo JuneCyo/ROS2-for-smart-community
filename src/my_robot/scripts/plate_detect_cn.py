@@ -8,18 +8,19 @@ import time
 
 import cv2
 import rclpy
+import torch
 from ament_index_python.packages import get_package_share_directory
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray
 from ultralytics import YOLO
 from vision_lighting import enhance_lighting
 
 
 WINDOW_NAME = 'cn_plate_view'
-DETECTION_PERIOD = 0.30  # Leave CPU time for Gazebo and navigation.
+DETECTION_PERIOD = 0.18
 
 
 def detect_plates(model, frame):
@@ -47,8 +48,11 @@ class PlateDetectCNNode(Node):
     def __init__(self):
         super().__init__('plate_detect_cn')
         self.declare_parameter('use_gui', True)
+        self.declare_parameter('defer_detection', False)
         self.use_gui = bool(self.get_parameter('use_gui').value)
+        self.detection_enabled = not bool(self.get_parameter('defer_detection').value)
         self.bridge = CvBridge()
+        torch.set_num_threads(2)
         model_path = os.path.join(get_package_share_directory('my_robot'),
                                   'models', 'plate_detect.pt')
         self.model = YOLO(model_path)
@@ -64,14 +68,39 @@ class PlateDetectCNNode(Node):
         self.result_time = 0.0
         self.published_seq = 0
         self.display_state = (-1, -1)
+        self.camera_frames = 0
+        self.detected_frames = 0
+        self.rate_start = time.monotonic()
 
         image_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(Image, '/camera/image_raw', self.img_callback, image_qos)
+        route_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                               durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(Bool, '/plate_detection_enabled',
+                                 self.activation_callback, route_qos)
         self.plate_pub = self.create_publisher(Float32MultiArray, '/plate_detect', 10)
+        self.plate_crop_pub = self.create_publisher(Image, '/plate_crop', image_qos)
         self.create_timer(0.04, self.update_display_and_publish)
+        self.create_timer(10.0, self.report_rates)
         self.worker = threading.Thread(target=self.detect_loop, name='plate_yolo', daemon=True)
         self.worker.start()
-        self.get_logger().info('车牌检测已启动；画面实时刷新，后台按最新图像检测')
+        self.get_logger().info('车牌检测已启动；等待车牌路段' if not self.detection_enabled
+                               else '车牌检测已启动；画面实时刷新，后台按最新图像检测')
+
+    def activation_callback(self, msg):
+        with self.lock:
+            if self.detection_enabled == msg.data:
+                return
+            self.detection_enabled = msg.data
+            self.boxes = []
+            self.selected = [0.0] * 5
+            self.result_time = 0.0
+            self.display_state = (-1, -1)
+        if msg.data:
+            self.new_image.set()
+            self.get_logger().info('即将进入车牌路段，开始检测')
+        else:
+            self.get_logger().info('已离开车牌路段，暂停检测')
 
     def img_callback(self, msg):
         try:
@@ -82,7 +111,10 @@ class PlateDetectCNNode(Node):
         with self.lock:
             self.latest_frame = frame
             self.frame_seq += 1
-        self.new_image.set()
+            self.camera_frames += 1
+            enabled = self.detection_enabled
+        if enabled:
+            self.new_image.set()
 
     def detect_loop(self):
         last_frame_seq = -1
@@ -96,7 +128,8 @@ class PlateDetectCNNode(Node):
                 break
             with self.lock:
                 frame, frame_seq = self.latest_frame, self.frame_seq
-            if frame is None or frame_seq == last_frame_seq:
+                enabled = self.detection_enabled
+            if not enabled or frame is None or frame_seq == last_frame_seq:
                 continue
             last_frame_seq = frame_seq
             next_inference = time.monotonic() + DETECTION_PERIOD
@@ -106,10 +139,39 @@ class PlateDetectCNNode(Node):
                 self.get_logger().warn(f'车牌检测失败：{exc}', throttle_duration_sec=5.0)
                 continue
             with self.lock:
+                if not self.detection_enabled:
+                    continue
                 self.boxes = boxes
                 self.selected = selected
                 self.result_seq += 1
                 self.result_time = time.monotonic()
+                self.detected_frames += 1
+            x1, y1, x2, y2, confidence = selected
+            if confidence >= 0.3:
+                pad_x = max(2, round((x2 - x1) * 0.05))
+                pad_y = max(2, round((y2 - y1) * 0.10))
+                left = max(0, int(x1) - pad_x)
+                top = max(0, int(y1) - pad_y)
+                right = min(frame.shape[1], int(x2) + pad_x + 1)
+                bottom = min(frame.shape[0], int(y2) + pad_y + 1)
+                crop = frame[top:bottom, left:right]
+                if crop.size:
+                    self.plate_crop_pub.publish(
+                        self.bridge.cv2_to_imgmsg(crop, encoding='bgr8'))
+
+    def report_rates(self):
+        now = time.monotonic()
+        with self.lock:
+            elapsed = max(now - self.rate_start, 1e-6)
+            camera_fps = self.camera_frames / elapsed
+            detect_fps = self.detected_frames / elapsed
+            self.camera_frames = 0
+            self.detected_frames = 0
+            self.rate_start = now
+            enabled = self.detection_enabled
+        self.get_logger().info(
+            f'相机收到 {camera_fps:.1f} 帧/秒，车牌推理 {detect_fps:.1f} 次/秒'
+            f'（{"工作" if enabled else "等待车牌路段"}）')
 
     def update_display_and_publish(self):
         with self.lock:
@@ -119,8 +181,9 @@ class PlateDetectCNNode(Node):
             selected = self.selected
             result_seq = self.result_seq
             result_time = self.result_time
+            enabled = self.detection_enabled
 
-        if result_seq > self.published_seq:
+        if enabled and result_seq > self.published_seq:
             self.plate_pub.publish(Float32MultiArray(data=selected))
             self.published_seq = result_seq
 

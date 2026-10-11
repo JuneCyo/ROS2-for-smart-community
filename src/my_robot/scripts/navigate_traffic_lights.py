@@ -21,7 +21,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import String, Float32MultiArray, Int32MultiArray
+from std_msgs.msg import Bool, String, Float32MultiArray, Int32MultiArray
 
 START = (3.95, -4.0, math.pi / 2)
 PLATE_STOPS = [
@@ -123,6 +123,9 @@ class TrafficLightRoute(Node):
         final_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                                durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.person_final_pub = self.create_publisher(String, '/person_count/final', final_qos)
+        self.plate_detection_pub = self.create_publisher(
+            Bool, '/plate_detection_enabled', final_qos)
+        self.plate_detection_state = None
         self.person_station_index = None
         self.person_start_ns = 0
         self.person_last_request_ns = 0
@@ -441,7 +444,8 @@ class TrafficLightRoute(Node):
         return points
 
     def bypass_target(self, x, y, heading, along, length, sx, sy, ux, uy):
-        if self.avoidance is not None and abs(angle_diff(math.atan2(uy, ux), heading)) > 0.45:
+        # 转弯时激光正前方仍指向上一段路，先对准新路段再判断绕行。
+        if abs(angle_diff(math.atan2(uy, ux), heading)) > 0.45:
             return False
         points = self.scan_points()
         remaining = max(0.0, length - along)
@@ -561,6 +565,10 @@ class TrafficLightRoute(Node):
             self.get_logger().warn('规划重试 %d/2：%s' % (self.plan_tries, reason))
 
     def tick(self):
+        plate_active = PERSON_ROUTE_INDICES[-1] < self.index <= PLATE_ROUTE_INDICES[-1]
+        if plate_active != self.plate_detection_state:
+            self.plate_detection_pub.publish(Bool(data=plate_active))
+            self.plate_detection_state = plate_active
         # 车牌文字完成投票或超时后再离开当前停靠点。
         if self.plate_detected:
             elapsed = (self.get_clock().now().nanoseconds - self.park_start_time) / 1e9

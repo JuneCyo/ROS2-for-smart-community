@@ -1,0 +1,14 @@
+person:
+  data: person.yaml
+  model: ../../models/person_yolov8n.pt
+  epochs: 10
+  imgsz: 640
+  batch: 2
+  device: cpu
+plate:
+  data: plate.yaml
+  model: ../../models/plate_detect.pt
+  epochs: 10
+  imgsz: 640
+  batch: 2
+  device: cpu

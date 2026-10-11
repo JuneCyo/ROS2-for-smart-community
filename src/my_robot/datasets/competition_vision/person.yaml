@@ -1,0 +1,4 @@
+train: person/images/train
+val: person/images/val
+names:
+  0: person

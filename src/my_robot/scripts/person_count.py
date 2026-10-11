@@ -43,6 +43,7 @@ class PersonCounter(Node):
         self.latest_image_msg = None
         self.latest_image_ns = 0
         self.last_inference_ns = 0
+        self.warmed_up = False
         self.result_pub = self.create_publisher(Int32MultiArray, '/person_count/result', 10)
         image_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(Image, '/camera/image_raw', self.image_callback, image_qos)
@@ -50,9 +51,16 @@ class PersonCounter(Node):
         self.get_logger().info('人偶立牌人数识别已启动；等待路线停靠 A、B 立牌')
 
     def image_callback(self, msg):
-        # Convert the latest frame only when the route requests a count.
         self.latest_image_msg = msg
         self.latest_image_ns = self.get_clock().now().nanoseconds
+        if not self.warmed_up:
+            self.warmed_up = True
+            try:
+                image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                count_people(self.model, enhance_lighting(image))
+                self.get_logger().info('人偶模型已完成首次推理准备')
+            except Exception as exc:
+                self.get_logger().warn(f'人偶模型首次推理失败：{exc}')
 
     def request_callback(self, msg):
         if msg.data not in BOARD_IDS:

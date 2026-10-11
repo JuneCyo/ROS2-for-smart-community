@@ -8,6 +8,7 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     launch_dir = os.path.join(get_package_share_directory('my_robot'), 'launch')
@@ -17,6 +18,7 @@ def generate_launch_description():
     auto_route = LaunchConfiguration('auto_route')
     lite_nav = LaunchConfiguration('lite_nav')
     enable_camera = LaunchConfiguration('enable_camera')
+    plate_gui = LaunchConfiguration('plate_gui')
     map_file = LaunchConfiguration('map')
 
     return LaunchDescription([
@@ -27,6 +29,8 @@ def generate_launch_description():
                               description='自动路线只启动 Nav2 规划器和速度平滑器'),
         DeclareLaunchArgument('enable_camera', default_value='true',
                               description='开启相机用于红绿灯、立牌人数与车牌识别'),
+        DeclareLaunchArgument('plate_gui', default_value='true',
+                              description='显示车牌相机窗口；无图形界面测试时设为 false'),
         DeclareLaunchArgument('lighting', default_value='normal',
                               description='Gazebo 场景光照：normal、dim 或 bright'),
         DeclareLaunchArgument('map', default_value=os.path.join(
@@ -39,6 +43,15 @@ def generate_launch_description():
             launch_arguments={'gui': gui, 'rviz': 'false',
                               'lighting': LaunchConfiguration('lighting'),
                               'enable_camera': enable_camera}.items()),
+        Node(package='my_robot', executable='plate_detect_cn.py',
+             name='plate_detect_cn', output='screen',
+             parameters=[{'use_sim_time': True,
+                          'use_gui': ParameterValue(plate_gui, value_type=bool),
+                          'defer_detection': ParameterValue(auto_route, value_type=bool)}],
+             condition=IfCondition(enable_camera)),
+        Node(package='my_robot', executable='plate_recognize.py',
+             name='plate_recognizer', output='screen',
+             parameters=[{'use_sim_time': True}], condition=IfCondition(enable_camera)),
         TimerAction(period=10.0, actions=[
             LogInfo(msg='[2/3] map_server + AMCL + Nav2 + RViz: 启动定位和路径规划'),
             IncludeLaunchDescription(
@@ -55,12 +68,6 @@ def generate_launch_description():
             Node(package='my_robot', executable='traffic_light_vision.py',
                  name='traffic_light_vision', output='screen',
                  parameters=[{'use_sim_time': True}], condition=IfCondition(auto_route)),
-            Node(package='my_robot', executable='plate_detect_cn.py',
-                 name='plate_detect_cn', output='screen',
-                 parameters=[{'use_sim_time': True}]),
-            Node(package='my_robot', executable='plate_recognize.py',
-                 name='plate_recognizer', output='screen',
-                 parameters=[{'use_sim_time': True}], condition=IfCondition(enable_camera)),
             Node(package='my_robot', executable='person_count.py',
                  name='person_counter', output='screen',
                  parameters=[{'use_sim_time': True}], condition=IfCondition(enable_camera)),

@@ -76,7 +76,7 @@
   </xacro:macro>
 
   <!-- 单目相机 -->
-  <xacro:macro name="my_camera" params="prefix parent xyz fov:=1.6 width:=960 height:=720 update_rate:=8.0">
+  <xacro:macro name="my_camera" params="prefix parent xyz fov:=1.6 width:=768 height:=576 update_rate:=25.0">
     <link name="${prefix}camera_link">
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>

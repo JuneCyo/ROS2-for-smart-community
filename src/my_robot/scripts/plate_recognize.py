@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Read the text in the centered plate box and publish confirmed OCR candidates."""
 
-import math
 import re
 
 import cv2
@@ -11,7 +10,7 @@ from rapidocr import RapidOCR
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray, String
+from std_msgs.msg import String
 from vision_lighting import enhance_lighting
 
 
@@ -25,57 +24,30 @@ def normalize_plate(text):
     return cleaned if PLATE_PATTERN.fullmatch(cleaned) else None
 
 
-def crop_plate(frame, detection):
-    """The detector publishes pixel coordinates, with a small border for OCR."""
-    if len(detection) != 5:
-        return None
-    x1, y1, x2, y2, confidence = detection
-    if confidence < 0.3 or x2 <= x1 or y2 <= y1:
-        return None
-    height, width = frame.shape[:2]
-    pad_x = max(2, round((x2 - x1) * 0.05))
-    pad_y = max(2, round((y2 - y1) * 0.10))
-    left = max(0, math.floor(x1) - pad_x)
-    top = max(0, math.floor(y1) - pad_y)
-    right = min(width, math.ceil(x2) + pad_x)
-    bottom = min(height, math.ceil(y2) + pad_y)
-    crop = frame[top:bottom, left:right]
-    return crop if crop.size else None
-
-
 class PlateRecognizer(Node):
     def __init__(self):
         super().__init__('plate_recognizer')
         self.bridge = CvBridge()
         self.ocr = RapidOCR()
-        self.latest_image_msg = None
-        self.latest_image_ns = 0
         self.last_ocr_ns = 0
         self.plate_pub = self.create_publisher(String, '/plate_text', 10)
         image_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
-        self.create_subscription(Image, '/camera/image_raw', self.image_callback, image_qos)
-        self.create_subscription(Float32MultiArray, '/plate_detect', self.box_callback, 1)
+        self.create_subscription(Image, '/plate_crop', self.crop_callback, image_qos)
         self.get_logger().info('车牌文字识别已启动，结果发布到 /plate_text')
 
-    def image_callback(self, msg):
-        self.latest_image_msg = msg
-        self.latest_image_ns = self.get_clock().now().nanoseconds
-
-    def box_callback(self, msg):
+    def crop_callback(self, msg):
         now_ns = self.get_clock().now().nanoseconds
-        if (self.latest_image_msg is None or now_ns - self.latest_image_ns > 1_000_000_000
-                or now_ns - self.last_ocr_ns < 350_000_000):
+        if now_ns - self.last_ocr_ns < 350_000_000:
             return
         try:
-            image = self.bridge.imgmsg_to_cv2(self.latest_image_msg, desired_encoding='bgr8')
+            crop = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
             self.get_logger().warn(f'车牌识别图像转换失败：{exc}', throttle_duration_sec=5.0)
             return
-        crop = crop_plate(image, msg.data)
-        if crop is None:
+        if crop.size == 0:
             return
         self.last_ocr_ns = now_ns
-        scale = max(1, min(8, math.ceil(240 / crop.shape[1])))
+        scale = max(1, min(8, (240 + crop.shape[1] - 1) // crop.shape[1]))
         enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         corrected = enhance_lighting(enlarged)
         variants = (corrected, enlarged) if corrected is not enlarged else (
