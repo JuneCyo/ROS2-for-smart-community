@@ -20,6 +20,22 @@
       </material>
     </visual>
 
+    <visual name="license_plate">
+      <pose>0 0.25 0.18 0 0 0</pose>
+      <geometry>
+        <box>
+          <size>0.52 0.01 0.18</size>
+        </box>
+      </geometry>
+      <material>
+        <script>
+          <uri>model://Car2/materials/scripts/</uri>
+          <uri>model://Car2/materials/textures/</uri>
+          <name>Car2/PlateFace</name>
+        </script>
+      </material>
+    </visual>
+
     <collision name="collision">
       <pose>0 0 0.5 0 0 0</pose>
       <geometry>

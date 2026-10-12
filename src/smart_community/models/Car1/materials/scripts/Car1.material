@@ -12,3 +12,17 @@ material Car1/Board
   }
 }
 
+material Car1/PlateFace
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture PlateFace.png
+      }
+    }
+  }
+}
+

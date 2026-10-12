@@ -30,21 +30,21 @@ PLATE_STOPS = [
     ('车牌识别 3/3', -1.2, -2.50, -math.pi / 2),  # Car1
 ]
 PERSON_STOPS = [
-    ('人偶立牌 A', 3.95, 2.20, math.pi),
+    ('人偶立牌 A', 1.05, 2.20, 0.0),
     ('人偶立牌 B', 1.05, 2.20, math.pi),
 ]
 ROUTE = [
    (' 起步直行 ', 3.95, -2.65, math.pi/ 2),
    (' 红绿灯 1 南侧 ', 3.95, -0.85, math.pi/ 2),
    (' 通过红绿灯 1', 3.95, 0.85, math.pi/ 2),
-   PERSON_STOPS[0],
    (' 北端左转 ', 3.95, 3.8, math.pi/ 2),
    (' 北侧向西 ', 1.05, 3.8, math.pi),
+   PERSON_STOPS[0],
    PERSON_STOPS[1],
    (' 再次左转向南 ', 1.05, 0.10, -math.pi/ 2),
    (' 通过红绿灯 2', -2.0, 0.10, math.pi),
    (' 西端左转 ', -4.0, 0.10, -math.pi/ 2),
-   (' 南端车牌前 ', -4.0, -2.50, -math.pi / 2),
+   (' 南端车牌前 ', -4.0, -2.15, -math.pi / 2),
    *PLATE_STOPS,
    (' 横穿到东侧右转 ', 3.95, -2.50, 0.0),
    (' 返回起点 ', *START),
@@ -72,6 +72,7 @@ class TrafficLightRoute(Node):
         super().__init__('navigate_traffic_lights')
         self.declare_parameter('start_at', 0)
         self.declare_parameter('speed', 0.38)
+        self.declare_parameter('plate_stop_use_odom', True)
         self.declare_parameter('plate_results_file', os.path.join(
             os.environ.get('ROS_LOG_DIR', os.getcwd()), 'plate_results.csv'))
         self.declare_parameter('person_results_file', os.path.join(
@@ -80,6 +81,7 @@ class TrafficLightRoute(Node):
         if not 0 <= self.index < len(ROUTE):
             raise ValueError('start_at must be between 0 and %d' % (len(ROUTE) - 1))
         self.speed = float(self.get_parameter('speed').value)
+        self.plate_stop_use_odom = bool(self.get_parameter('plate_stop_use_odom').value)
         self.plate_results_file = str(self.get_parameter('plate_results_file').value)
         self.person_results_file = str(self.get_parameter('person_results_file').value)
         self.pose = None
@@ -111,9 +113,10 @@ class TrafficLightRoute(Node):
         self.create_subscription(String, '/plate_text', self.plate_text_callback, 10)
         self.plate_conf_threshold = 0.3
         self.park_duration = 3.0
-        self.plate_read_timeout = 10.0
+        self.plate_wait_log_interval = 10.0
         self.plate_detected = False
         self.park_start_time = 0.0
+        self.last_plate_wait_log_ns = 0
         self.plate_cont = 0
         self.plate_need_frames = 3
         self.plate_votes = Counter()
@@ -125,7 +128,11 @@ class TrafficLightRoute(Node):
         self.person_final_pub = self.create_publisher(String, '/person_count/final', final_qos)
         self.plate_detection_pub = self.create_publisher(
             Bool, '/plate_detection_enabled', final_qos)
+        self.plate_read_pub = self.create_publisher(
+            Bool, '/plate_read_enabled', final_qos)
         self.plate_detection_state = None
+        self.plate_read_state = None
+        self.aligning_index = None
         self.person_station_index = None
         self.person_start_ns = 0
         self.person_last_request_ns = 0
@@ -153,10 +160,11 @@ class TrafficLightRoute(Node):
     def plate_callback(self, msg: Float32MultiArray):
         if self.pose is None or self.plate_detected or self.index not in PLATE_ROUTE_INDICES:
             return
+        station_pose = self.route_pose()
         _, target_x, target_y, target_yaw = ROUTE[self.index]
-        distance = math.hypot(self.pose.position.x - target_x,
-                              self.pose.position.y - target_y)
-        yaw_err = abs(angle_diff(yaw_of(self.pose.orientation), target_yaw))
+        distance = math.hypot(station_pose.position.x - target_x,
+                              station_pose.position.y - target_y)
+        yaw_err = abs(angle_diff(yaw_of(station_pose.orientation), target_yaw))
         yaw_limit = 0.35 if self.plate_facing_index == self.index else PLATE_YAW_TOL
         if distance >= PLATE_POSITION_TOL or yaw_err >= yaw_limit:
             self.plate_cont = 0
@@ -181,6 +189,7 @@ class TrafficLightRoute(Node):
                 self.get_logger().info(f"第 {plate_number}/{PLATE_TOTAL_NUM} 块车牌检测确认，停车观察")
                 self.plate_detected = True
                 self.park_start_time = self.get_clock().now().nanoseconds
+                self.last_plate_wait_log_ns = self.park_start_time
                 self.plate_cont = 0
                 self.plate_votes.clear()
         else:
@@ -284,6 +293,19 @@ class TrafficLightRoute(Node):
         start = START if self.index == 0 else ROUTE[self.index - 1][1:4]
         goal = ROUTE[self.index][1:4]
         return start[0], start[1], goal[0], goal[1]
+
+    def route_pose(self):
+        if (self.plate_stop_use_odom and self.index >= PLATE_ROUTE_INDICES[0]
+                and self.odom_pose is not None):
+            return self.odom_pose
+        return self.pose
+
+    def should_align(self, distance):
+        if distance < 0.20:
+            self.aligning_index = self.index
+        elif self.aligning_index == self.index and distance >= 0.28:
+            self.aligning_index = None
+        return self.aligning_index == self.index
 
     def distance_from_leg(self, x, y):
         sx, sy, gx, gy = self.leg()
@@ -569,24 +591,32 @@ class TrafficLightRoute(Node):
         if plate_active != self.plate_detection_state:
             self.plate_detection_pub.publish(Bool(data=plate_active))
             self.plate_detection_state = plate_active
-        # 车牌文字完成投票或超时后再离开当前停靠点。
+        if self.plate_detected != self.plate_read_state:
+            self.plate_read_pub.publish(Bool(data=self.plate_detected))
+            self.plate_read_state = self.plate_detected
+        # 每块车牌必须读到两次一致的文字才离开停靠点。
         if self.plate_detected:
-            elapsed = (self.get_clock().now().nanoseconds - self.park_start_time) / 1e9
+            now_ns = self.get_clock().now().nanoseconds
+            elapsed = (now_ns - self.park_start_time) / 1e9
             self.stop()
             if elapsed < self.park_duration:
                 return
             plate_number = PLATE_ROUTE_INDICES.index(self.index) + 1
             plate_text, votes = self.plate_votes.most_common(1)[0] if self.plate_votes else ('', 0)
-            if votes < 2 and elapsed < self.plate_read_timeout:
-                self.get_logger().warn(f'第 {plate_number} 块车牌文字仍未确认，继续观察',
-                                       throttle_duration_sec=3.0)
+            if votes < 2:
+                if now_ns - self.last_plate_wait_log_ns >= self.plate_wait_log_interval * 1e9:
+                    self.get_logger().warn(
+                        f'第 {plate_number} 块车牌尚未确认（{votes}/2 票），原地继续读取；'
+                        '请检查相机画面和 /plate_text')
+                    self.last_plate_wait_log_ns = now_ns
                 return
-            status = 'confirmed' if votes >= 2 else ('unverified' if votes else 'unreadable')
-            if not self.save_plate_result(plate_number, plate_text, status, votes):
+            if not self.save_plate_result(plate_number, plate_text, 'confirmed', votes):
                 return
             self.get_logger().info(f'第 {plate_number}/{PLATE_TOTAL_NUM} 块车牌：'
-                                   f'{plate_text or "未读出"}（{status}），已保存，继续导航')
+                                   f'{plate_text}（confirmed），已保存，继续导航')
             self.plate_detected = False
+            self.plate_read_pub.publish(Bool(data=False))
+            self.plate_read_state = False
             self.plate_cont = 0
             self.plate_votes.clear()
             self.plate_facing_index = None
@@ -615,8 +645,9 @@ class TrafficLightRoute(Node):
             self.stop()
             self.get_logger().warn('激光扫描超过 1 秒未更新，已停车等待', throttle_duration_sec=5.0)
             return
-        x, y = self.pose.position.x, self.pose.position.y
-        heading = yaw_of(self.pose.orientation)
+        navigation_pose = self.route_pose()
+        x, y = navigation_pose.position.x, navigation_pose.position.y
+        heading = yaw_of(navigation_pose.orientation)
         name, gx, gy, gyaw = ROUTE[self.index]
         distance_to_goal = math.hypot(gx - x, gy - y)
         light_id, gate_progress = self.signal_gate(x, y)
@@ -626,8 +657,8 @@ class TrafficLightRoute(Node):
                                    (light_id, self.light_state(light_id - 1)),
                                    throttle_duration_sec=2.0)
             return
-        # 距航点不足 0.20 m 时原地对准目标朝向。
-        if distance_to_goal < 0.20:
+        # 进入航点后保持原地对准，避免定位噪声在 0.20 m 边界切换控制方式。
+        if self.should_align(distance_to_goal):
             self.stop()
             if self.index in PERSON_ROUTE_INDICES and self.person_station_index == self.index:
                 if abs(angle_diff(gyaw, heading)) < 0.40:

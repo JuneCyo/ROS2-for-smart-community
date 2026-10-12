@@ -61,6 +61,7 @@ class PlateDetectCNNode(Node):
         self.new_image = threading.Event()
         self.stop_worker = threading.Event()
         self.latest_frame = None
+        self.latest_frame_stamp = None
         self.frame_seq = 0
         self.boxes = []
         self.selected = [0.0] * 5
@@ -110,6 +111,7 @@ class PlateDetectCNNode(Node):
             return
         with self.lock:
             self.latest_frame = frame
+            self.latest_frame_stamp = msg.header.stamp
             self.frame_seq += 1
             self.camera_frames += 1
             enabled = self.detection_enabled
@@ -128,6 +130,7 @@ class PlateDetectCNNode(Node):
                 break
             with self.lock:
                 frame, frame_seq = self.latest_frame, self.frame_seq
+                frame_stamp = self.latest_frame_stamp
                 enabled = self.detection_enabled
             if not enabled or frame is None or frame_seq == last_frame_seq:
                 continue
@@ -148,16 +151,17 @@ class PlateDetectCNNode(Node):
                 self.detected_frames += 1
             x1, y1, x2, y2, confidence = selected
             if confidence >= 0.3:
-                pad_x = max(2, round((x2 - x1) * 0.05))
-                pad_y = max(2, round((y2 - y1) * 0.10))
+                pad_x = max(3, round((x2 - x1) * 0.12))
+                pad_y = max(3, round((y2 - y1) * 0.20))
                 left = max(0, int(x1) - pad_x)
                 top = max(0, int(y1) - pad_y)
                 right = min(frame.shape[1], int(x2) + pad_x + 1)
                 bottom = min(frame.shape[0], int(y2) + pad_y + 1)
                 crop = frame[top:bottom, left:right]
                 if crop.size:
-                    self.plate_crop_pub.publish(
-                        self.bridge.cv2_to_imgmsg(crop, encoding='bgr8'))
+                    crop_msg = self.bridge.cv2_to_imgmsg(crop, encoding='bgr8')
+                    crop_msg.header.stamp = frame_stamp
+                    self.plate_crop_pub.publish(crop_msg)
 
     def report_rates(self):
         now = time.monotonic()
