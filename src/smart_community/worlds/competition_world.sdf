@@ -72,19 +72,19 @@
 <!-- Car1 -->
 <include>
   <uri>model://Car1</uri>
-  <pose>-1.2 -4.6 0 0 0 0</pose>
+  <pose>-1.2 -3.875 0 0 0 0</pose>
 </include>
 
 <!-- Car2 -->
 <include>
   <uri>model://Car2</uri>
-  <pose>-2.6 -4.6 0 0 0 0</pose>
+  <pose>-2.6 -3.875 0 0 0 0</pose>
 </include>
 
 <!-- Car3 -->
 <include>
   <uri>model://Car3</uri>
-  <pose>-4.0 -4.6 0 0 0 0</pose>
+  <pose>-4.0 -3.875 0 0 0 0</pose>
 </include>
 
 <!-- traffic_light1 -->

@@ -94,7 +94,7 @@ class RouteStopsTest(unittest.TestCase):
         self.assertNotEqual(ROUTE[PLATE_ROUTE_INDICES[0] - 1][1:3],
                             ROUTE[PLATE_ROUTE_INDICES[0]][1:3])
 
-    def test_plate_faces_are_forward_of_car_posters_and_clear_of_white_line(self):
+    def test_whole_car_models_move_forward_and_clear_white_line(self):
         world = ET.parse(PACKAGE.parent / 'smart_community' / 'worlds'
                          / 'competition_world.sdf').getroot()
         for number in (1, 2, 3):
@@ -105,15 +105,17 @@ class RouteStopsTest(unittest.TestCase):
                 car_y = float(include.findtext('pose').split()[1])
                 model_dir = PACKAGE.parent / 'smart_community' / 'models' / model_name
                 model = ET.parse(model_dir / 'model.sdf').getroot()
-                face = model.find('.//visual[@name="license_plate"]')
-                self.assertIsNotNone(face)
-                face_y = float(face.findtext('pose').split()[1])
-                width = float(face.findtext('geometry/box/size').split()[0])
-                self.assertGreater(face_y, 0)
-                self.assertGreaterEqual(width, 0.5)
-                self.assertLess(car_y + face_y, -3.85)
-                self.assertIsNone(model.find('.//collision[@name="license_plate"]'))
-                self.assertTrue((model_dir / 'materials/textures/PlateFace.png').is_file())
+                board = model.find('.//visual[@name="visual"]')
+                collision = model.find('.//collision[@name="collision"]')
+                self.assertIsNotNone(board)
+                self.assertIsNotNone(collision)
+                self.assertAlmostEqual(car_y, -3.875)
+                self.assertEqual(board.findtext('pose'), collision.findtext('pose'))
+                self.assertEqual(board.findtext('geometry/box/size'),
+                                 collision.findtext('geometry/box/size'))
+                self.assertLess(car_y, -3.35 - 0.5)
+                self.assertIsNone(model.find('.//visual[@name="license_plate"]'))
+                self.assertFalse((model_dir / 'materials/textures/PlateFace.png').exists())
 
     def test_unread_plate_does_not_advance_after_long_wait(self):
         route = FakePlateRoute(60_000_000_000, {})

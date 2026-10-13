@@ -29,7 +29,7 @@ mkdir -p "$ROS_LOG_DIR"
 ros2 launch my_robot bringup_navigation.launch.py
 ```
 
-默认打开 Gazebo 与 RViz，小车依次经过两个红绿灯，在 A、B 立牌之间识别人数，再读取三辆车的车牌并返回起点。无图形界面的测试可在启动命令后加 `gui:=false rviz:=false plate_gui:=false`。人数和车牌结果分别写入 `log/ros/person_results.csv`、`log/ros/plate_results.csv`。车牌站读到两次一致的完整文字并保存后，小车才驶向下一站。
+默认打开 Gazebo 与 RViz，小车依次经过两个红绿灯，在 A、B 立牌之间识别人数，再读取三辆车的车牌并返回起点。三辆车的整车贴图与碰撞体已一起移近巡检车道，车牌仍在原车身贴图上；导航地图对应新车位。无图形界面的测试可在启动命令后加 `gui:=false rviz:=false plate_gui:=false`。人数和车牌结果分别写入 `log/ros/person_results.csv`、`log/ros/plate_results.csv`。车牌站读到两次一致的完整文字并保存后，小车才驶向下一站。
 
 ## 单独建图
 
